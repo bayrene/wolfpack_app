@@ -20,7 +20,7 @@ interface HealthMetric {
 }
 
 interface HealthExportPayload {
-  data?: HealthMetric[];
+  data?: HealthMetric[] | { metrics?: HealthMetric[] };
   metrics?: HealthMetric[];
 }
 
@@ -51,7 +51,10 @@ export async function POST(req: Request) {
   }
 
   console.log('[health-sync] keys:', Object.keys(body));
-  const metrics: HealthMetric[] = body.data ?? body.metrics ?? [];
+  // Health Auto Export sends { data: { metrics: [...] } } or { data: [...] } or { metrics: [...] }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const raw = body as any;
+  const metrics: HealthMetric[] = raw?.data?.metrics ?? body.data ?? body.metrics ?? [];
   console.log('[health-sync] metrics count:', metrics.length);
   console.log('[health-sync] metric names:', metrics.map(m => m.name).join(', '));
 
