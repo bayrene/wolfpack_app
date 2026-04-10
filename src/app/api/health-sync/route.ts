@@ -65,10 +65,11 @@ export async function POST(req: Request) {
     console.log('[health-sync] processing metric:', metric.name, '→', nameLower, 'data points:', metric.data?.length);
 
     if (nameLower === 'stepcount' || nameLower === 'step_count' || nameLower === 'steps') {
+      // Sum all minute-by-minute readings per day
       for (const dp of metric.data) {
         const date = parseDate(dp.date);
         updates[date] = updates[date] ?? {};
-        updates[date].steps = Math.round(getValue(dp));
+        updates[date].steps = (updates[date].steps ?? 0) + Math.round(getValue(dp));
       }
     }
 
@@ -77,9 +78,8 @@ export async function POST(req: Request) {
         const date = parseDate(dp.date);
         updates[date] = updates[date] ?? {};
         const val = getValue(dp);
-        // Health Auto Export can send liters or oz depending on settings
-        // If value > 50 assume oz, otherwise assume liters
-        updates[date].waterOz = val > 50 ? Math.round(val) : Math.round(val * 33.814);
+        const oz = val > 50 ? Math.round(val) : Math.round(val * 33.814);
+        updates[date].waterOz = (updates[date].waterOz ?? 0) + oz;
       }
     }
   }
