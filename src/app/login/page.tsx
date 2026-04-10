@@ -1,10 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { WolfLogo } from '@/components/ui/wolf-logo';
 
-export default function LoginPage() {
+function LoginForm() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -33,6 +33,29 @@ export default function LoginPage() {
   }
 
   return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <input
+        type="password"
+        placeholder="Password"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+        autoFocus
+        className="w-full px-4 py-3 rounded-xl bg-neutral-900 border border-neutral-800 text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-[#E07A3A] focus:border-transparent text-base"
+      />
+      {error && <p className="text-red-400 text-sm text-center">{error}</p>}
+      <button
+        type="submit"
+        disabled={!password || loading}
+        className="w-full py-3 rounded-xl bg-[#E07A3A] hover:bg-[#c96a2e] text-white font-semibold text-base transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        {loading ? 'Entering...' : 'Enter'}
+      </button>
+    </form>
+  );
+}
+
+export default function LoginPage() {
+  return (
     <div className="min-h-screen flex items-center justify-center bg-neutral-950">
       <div className="w-full max-w-sm px-6">
         <div className="flex flex-col items-center mb-8">
@@ -42,25 +65,9 @@ export default function LoginPage() {
           </h1>
           <p className="text-neutral-500 text-sm mt-1">Personal dashboard</p>
         </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoFocus
-            className="w-full px-4 py-3 rounded-xl bg-neutral-900 border border-neutral-800 text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-[#E07A3A] focus:border-transparent text-base"
-          />
-          {error && <p className="text-red-400 text-sm text-center">{error}</p>}
-          <button
-            type="submit"
-            disabled={!password || loading}
-            className="w-full py-3 rounded-xl bg-[#E07A3A] hover:bg-[#c96a2e] text-white font-semibold text-base transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {loading ? 'Entering...' : 'Enter'}
-          </button>
-        </form>
+        <Suspense>
+          <LoginForm />
+        </Suspense>
       </div>
     </div>
   );
