@@ -4,12 +4,8 @@ import { dailyLog } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 
-// Health Auto Export sends data in this format:
-// { data: [ { name: "StepCount", units: "count", data: [{ date: "2025-...", qty: 12345 }] } ] }
-// Or the "Export All" format with multiple metrics
-
 interface HealthDataPoint {
-  date: string; // ISO 8601 like "2025-04-10 00:00:00 -0500"
+  date: string;
   qty?: number;
   Avg?: number;
   Min?: number;
@@ -29,7 +25,6 @@ interface HealthExportPayload {
 }
 
 function parseDate(raw: string): string {
-  // "2025-04-10 08:23:00 -0500" → "2025-04-10"
   return raw.substring(0, 10);
 }
 
@@ -38,7 +33,6 @@ function getValue(dp: HealthDataPoint): number {
 }
 
 export async function POST(req: Request) {
-  // Optional secret check
   const secret = process.env.HEALTH_SYNC_SECRET;
   if (secret) {
     const authHeader = req.headers.get('authorization');
@@ -49,18 +43,25 @@ export async function POST(req: Request) {
 
   let body: HealthExportPayload;
   try {
-    body = await req.json();
+    const text = await req.text();
+    console.log('[health-sync] raw body:', text.substring(0, 500));
+    body = JSON.parse(text);
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
+  console.log('[health-sync] keys:', Object.keys(body));
   const metrics: HealthMetric[] = body.data ?? body.metrics ?? [];
+  console.log('[health-sync] metrics count:', metrics.length);
+  console.log('[health-sync] metric names:', metrics.map(m => m.name).join(', '));
+
   const updates: Record<string, { steps?: number; waterOz?: number }> = {};
 
   for (const metric of metrics) {
-    const key = metric.name.toLowerCase().replace(/\s+/g, '_');
+    const nameLower = metric.name.toLowerCase().replace(/\s+/g, '');
+    console.log('[health-sync] processing metric:', metric.name, '→', nameLower, 'data points:', metric.data?.length);
 
-    if (key === 'stepcount' || key === 'step_count' || metric.name === 'StepCount') {
+    if (nameLower === 'stepcount' || nameLower === 'steps') {
       for (const dp of metric.data) {
         const date = parseDate(dp.date);
         updates[date] = updates[date] ?? {};
@@ -68,19 +69,19 @@ export async function POST(req: Request) {
       }
     }
 
-    if (
-      key === 'dietarywater' || key === 'dietary_water' ||
-      metric.name === 'DietaryWater' || metric.name === 'Water'
-    ) {
+    if (nameLower === 'dietarywater' || nameLower === 'water' || nameLower === 'dietarywater(l)') {
       for (const dp of metric.data) {
         const date = parseDate(dp.date);
         updates[date] = updates[date] ?? {};
-        // Health Auto Export reports water in liters; convert to oz (1L = 33.814 oz)
-        const liters = getValue(dp);
-        updates[date].waterOz = Math.round(liters * 33.814);
+        const val = getValue(dp);
+        // Health Auto Export can send liters or oz depending on settings
+        // If value > 50 assume oz, otherwise assume liters
+        updates[date].waterOz = val > 50 ? Math.round(val) : Math.round(val * 33.814);
       }
     }
   }
+
+  console.log('[health-sync] updates:', JSON.stringify(updates));
 
   let upserted = 0;
   for (const [date, vals] of Object.entries(updates)) {
@@ -106,5 +107,5 @@ export async function POST(req: Request) {
   revalidatePath('/');
   revalidatePath('/progress');
 
-  return NextResponse.json({ ok: true, datesUpdated: upserted });
+  return NextResponse.json({ ok: true, datesUpdated: upserted, metricsReceived: metrics.map(m => m.name) });
 }
