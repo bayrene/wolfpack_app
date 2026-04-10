@@ -24,8 +24,7 @@ function LoginForm() {
 
     if (res.ok) {
       const from = searchParams.get('from') ?? '/';
-      router.push(from);
-      router.refresh();
+      window.location.href = from;
     } else {
       setError('Wrong password. Try again.');
       setLoading(false);
