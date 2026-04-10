@@ -12,7 +12,9 @@ export function proxy(request: NextRequest) {
     pathname.startsWith('/_next') ||
     pathname.startsWith('/favicon')
   ) {
-    return NextResponse.next();
+    const res = NextResponse.next();
+    res.headers.set('x-pathname', pathname);
+    return res;
   }
 
   const token = request.cookies.get('auth')?.value;
@@ -24,7 +26,10 @@ export function proxy(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  return NextResponse.next();
+  // Forward pathname so layout can detect login page
+  const response = NextResponse.next();
+  response.headers.set('x-pathname', pathname);
+  return response;
 }
 
 export const config = {
