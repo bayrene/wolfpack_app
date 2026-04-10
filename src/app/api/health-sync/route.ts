@@ -64,7 +64,7 @@ export async function POST(req: Request) {
     const nameLower = metric.name.toLowerCase().replace(/\s+/g, '');
     console.log('[health-sync] processing metric:', metric.name, '→', nameLower, 'data points:', metric.data?.length);
 
-    if (nameLower === 'stepcount' || nameLower === 'steps') {
+    if (nameLower === 'stepcount' || nameLower === 'step_count' || nameLower === 'steps') {
       for (const dp of metric.data) {
         const date = parseDate(dp.date);
         updates[date] = updates[date] ?? {};
