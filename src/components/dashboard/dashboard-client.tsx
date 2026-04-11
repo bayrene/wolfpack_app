@@ -1255,14 +1255,14 @@ export function DashboardClient({
                 <CardContent className="space-y-3">
                   <div className="grid grid-cols-2 gap-3">
                     <button onClick={() => openBrushModal('am', amBrush?.id)} disabled={isPending}
-                      className={`rounded-xl p-4 flex flex-col items-center gap-1.5 border-2 transition-all disabled:opacity-50 ${amBrush ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-950/40' : 'border-dashed border-neutral-200 dark:border-neutral-700'}`}>
+                      className={`rounded-xl p-4 flex flex-col items-center gap-1.5 border-2 transition-all disabled:opacity-50 hover:scale-[1.02] hover:shadow-md ${amBrush ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-950/60' : 'border-dashed border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800/60'}`}>
                       <Sun className={`w-6 h-6 ${amBrush ? 'text-emerald-500' : 'text-neutral-300'}`} />
                       <span className={`text-sm font-semibold ${amBrush ? 'text-emerald-600 dark:text-emerald-400' : 'text-neutral-400'}`}>{amBrush ? 'Morning ✓' : 'Morning'}</span>
                       {amBrush && <span className="text-[11px] text-neutral-500">{amBrush.time}{amBrush.duration ? ` · ${fmtDur(amBrush.duration)}` : ''}</span>}
                       {amBrush && <span className="text-[10px] text-neutral-400">tap to remove</span>}
                     </button>
                     <button onClick={() => openBrushModal('pm', pmBrush?.id)} disabled={isPending}
-                      className={`rounded-xl p-4 flex flex-col items-center gap-1.5 border-2 transition-all disabled:opacity-50 ${pmBrush ? 'border-indigo-400 bg-indigo-50 dark:bg-indigo-950/40' : 'border-dashed border-neutral-200 dark:border-neutral-700'}`}>
+                      className={`rounded-xl p-4 flex flex-col items-center gap-1.5 border-2 transition-all disabled:opacity-50 hover:scale-[1.02] hover:shadow-md ${pmBrush ? 'border-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-950/60' : 'border-dashed border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800/60'}`}>
                       <MoonIcon className={`w-6 h-6 ${pmBrush ? 'text-indigo-500' : 'text-neutral-300'}`} />
                       <span className={`text-sm font-semibold ${pmBrush ? 'text-indigo-600 dark:text-indigo-400' : 'text-neutral-400'}`}>{pmBrush ? 'Evening ✓' : 'Evening'}</span>
                       {pmBrush && <span className="text-[11px] text-neutral-500">{pmBrush.time}{pmBrush.duration ? ` · ${fmtDur(pmBrush.duration)}` : ''}</span>}
@@ -1326,8 +1326,8 @@ export function DashboardClient({
 
       {/* Brush Log Modal */}
       {brushModal.open && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={() => setBrushModal(m => ({ ...m, open: false }))}>
-          <div className="w-full max-w-md bg-white dark:bg-neutral-900 rounded-t-2xl p-6 space-y-5" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4" onClick={() => setBrushModal(m => ({ ...m, open: false }))}>
+          <div className="w-full max-w-md bg-white dark:bg-neutral-900 rounded-2xl p-6 space-y-5 shadow-2xl" onClick={e => e.stopPropagation()}>
             <h3 className="text-base font-semibold">{brushModal.slot === 'am' ? '🌅 Morning' : '🌙 Evening'} Brush</h3>
 
             {/* Duration */}
