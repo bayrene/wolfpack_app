@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/db';
-import { sleepLog, ouraDaily, dailyLog } from '@/db/schema';
-import { eq, and } from 'drizzle-orm';
+import { sleepLog, ouraDaily } from '@/db/schema';
+import { eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { format, subDays } from 'date-fns';
 
@@ -159,18 +159,6 @@ export async function POST() {
     }
     activityUpserted++;
 
-    // Sync Oura's authoritative daily step count → dailyLog (matches Apple Health's Oura integration)
-    if (a.steps != null) {
-      const steps = a.steps as number;
-      const existingLog = await db.select().from(dailyLog)
-        .where(and(eq(dailyLog.date, day), eq(dailyLog.person, 'me')))
-        .get();
-      if (existingLog) {
-        await db.update(dailyLog).set({ steps }).where(eq(dailyLog.id, existingLog.id)).run();
-      } else {
-        await db.insert(dailyLog).values({ date: day, person: 'me', steps }).run();
-      }
-    }
   }
 
   revalidatePath('/');
