@@ -202,6 +202,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
   return (
     <DashboardClient
+      key={selectedDate}
       today={today}
       selectedDate={selectedDate}
       myNutrition={myNutrition}
