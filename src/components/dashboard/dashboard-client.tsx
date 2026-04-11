@@ -895,13 +895,23 @@ export function DashboardClient({
                       <MoonIcon className="w-4 h-4 text-indigo-400" />
                       <span className="text-base font-semibold text-white">Sleep</span>
                     </div>
-                    <button
-                      onClick={handleSync}
-                      disabled={isSyncingOura}
-                      className="text-xs px-3 py-1.5 rounded-lg border border-neutral-700 text-neutral-400 hover:border-indigo-500 hover:text-indigo-300 transition-colors disabled:opacity-50"
-                    >
-                      {isSyncingOura ? 'Syncing…' : 'Sync Now'}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <a
+                        href="https://cloud.ouraring.com/dashboard"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs px-3 py-1.5 rounded-lg border border-neutral-700 text-neutral-400 hover:border-indigo-500 hover:text-indigo-300 transition-colors"
+                      >
+                        Oura ↗
+                      </a>
+                      <button
+                        onClick={handleSync}
+                        disabled={isSyncingOura}
+                        className="text-xs px-3 py-1.5 rounded-lg border border-neutral-700 text-neutral-400 hover:border-indigo-500 hover:text-indigo-300 transition-colors disabled:opacity-50"
+                      >
+                        {isSyncingOura ? 'Syncing…' : 'Sync Now'}
+                      </button>
+                    </div>
                   </div>
 
                   {!s ? (
