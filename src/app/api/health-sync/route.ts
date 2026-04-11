@@ -84,7 +84,7 @@ export async function POST(req: Request) {
     }
 
     // Weight — take the last reading of the day (most recent)
-    if (nameLower === 'body_mass' || nameLower === 'bodymass' || nameLower === 'weight') {
+    if (nameLower === 'body_mass' || nameLower === 'bodymass' || nameLower === 'weight' || nameLower === 'weight_body_mass' || nameLower === 'weightbodymass') {
       for (const dp of metric.data) {
         const date = parseDate(dp.date);
         updates[date] = updates[date] ?? {};
