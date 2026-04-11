@@ -169,6 +169,10 @@ export const dailyLog = sqliteTable('daily_log', {
   steps: integer('steps').default(0),
   waterOz: integer('water_oz').default(0),
   coffee: integer('coffee').default(0), // number of cups of black coffee
+  weightLbs: real('weight_lbs'), // from Apple Health / manual
+  restingHeartRate: integer('resting_heart_rate'), // bpm from Apple Health
+  caffeineMg: integer('caffeine_mg'), // mg from Apple Health
+  workoutMinutes: integer('workout_minutes'), // active workout time in minutes
   person: text('person', { enum: ['me', 'wife'] }).notNull(),
   notes: text('notes'),
   createdAt: text('created_at').default(sql`(datetime('now'))`),

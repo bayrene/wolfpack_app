@@ -58,7 +58,7 @@ export async function POST(req: Request) {
   console.log('[health-sync] metrics count:', metrics.length);
   console.log('[health-sync] metric names:', metrics.map(m => m.name).join(', '));
 
-  const updates: Record<string, { steps?: number; waterOz?: number }> = {};
+  const updates: Record<string, { steps?: number; waterOz?: number; weightLbs?: number; restingHeartRate?: number; caffeineMg?: number; workoutMinutes?: number }> = {};
 
   for (const metric of metrics) {
     const nameLower = metric.name.toLowerCase().replace(/\s+/g, '');
@@ -80,6 +80,44 @@ export async function POST(req: Request) {
         const val = getValue(dp);
         const oz = val > 50 ? Math.round(val) : Math.round(val * 33.814);
         updates[date].waterOz = (updates[date].waterOz ?? 0) + oz;
+      }
+    }
+
+    // Weight — take the last reading of the day (most recent)
+    if (nameLower === 'body_mass' || nameLower === 'bodymass' || nameLower === 'weight') {
+      for (const dp of metric.data) {
+        const date = parseDate(dp.date);
+        updates[date] = updates[date] ?? {};
+        // Apple Health sends weight in kg, convert to lbs
+        const val = getValue(dp);
+        updates[date].weightLbs = Math.round(val * 2.20462 * 10) / 10;
+      }
+    }
+
+    // Resting heart rate
+    if (nameLower === 'resting_heart_rate' || nameLower === 'restingheartrate') {
+      for (const dp of metric.data) {
+        const date = parseDate(dp.date);
+        updates[date] = updates[date] ?? {};
+        updates[date].restingHeartRate = Math.round(getValue(dp));
+      }
+    }
+
+    // Caffeine — sum all intake per day, convert mg
+    if (nameLower === 'dietary_caffeine' || nameLower === 'dietarycaffeine' || nameLower === 'caffeine') {
+      for (const dp of metric.data) {
+        const date = parseDate(dp.date);
+        updates[date] = updates[date] ?? {};
+        updates[date].caffeineMg = (updates[date].caffeineMg ?? 0) + Math.round(getValue(dp));
+      }
+    }
+
+    // Workout / exercise time in minutes
+    if (nameLower === 'apple_exercise_time' || nameLower === 'appleexercisetime' || nameLower === 'exercise_time' || nameLower === 'workout_minutes') {
+      for (const dp of metric.data) {
+        const date = parseDate(dp.date);
+        updates[date] = updates[date] ?? {};
+        updates[date].workoutMinutes = (updates[date].workoutMinutes ?? 0) + Math.round(getValue(dp));
       }
     }
   }
