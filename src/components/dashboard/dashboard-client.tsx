@@ -704,78 +704,16 @@ export function DashboardClient({
               </div>
               <p className="text-xs text-neutral-500">{steps.toLocaleString()} / {STEPS_TARGET.toLocaleString()}</p>
               <Progress value={(steps / STEPS_TARGET) * 100} indicatorClassName="bg-[#2A9D8F]" />
-              {/* Date nav */}
-              <div className="flex items-center justify-between">
-                <button
-                  type="button"
-                  onClick={() => navigateStepsDate('prev')}
-                  className="p-0.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-                >
-                  <ChevronLeft className="w-3.5 h-3.5 text-neutral-500" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!isStepsToday) {
-                      setStepsDate(today);
-                      startTransition(async () => {
-                        const { getDailyLog } = await import('@/db/queries/daily-log');
-                        const log = await getDailyLog(today, 'me');
-                        setSteps(log?.steps ?? todaySteps);
-                        if (stepsInputRef.current) stepsInputRef.current.value = String(log?.steps ?? todaySteps);
-                      });
-                    }
-                  }}
-                  className={`text-[10px] font-medium px-1 text-center truncate max-w-[60px] ${isStepsToday ? 'text-[#2A9D8F]' : 'text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300'}`}
-                >
-                  {stepsDateLabel}
-                </button>
-                <button
-                  type="button"
-                  disabled={isStepsToday}
-                  onClick={() => navigateStepsDate('next')}
-                  className="p-0.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors disabled:opacity-30"
-                >
-                  <ChevronRight className="w-3.5 h-3.5 text-neutral-500" />
-                </button>
-              </div>
-              <input
-                ref={stepsInputRef}
-                type="number"
-                defaultValue={steps}
-                key={stepsDate}
-                onBlur={(e) => { const v = parseInt(e.target.value, 10); if (!isNaN(v) && v >= 0) handleStepsSave(v); }}
-                onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-                className="w-full text-center text-sm font-semibold bg-neutral-100 dark:bg-neutral-800 rounded-lg px-2 py-1.5 border border-neutral-200 dark:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-[#2A9D8F] focus:border-transparent"
-              />
             </div>
 
             {/* ── Water ── */}
             <div className="px-3 space-y-2">
-              <div className="flex items-center justify-between gap-1">
-                <div className="flex items-center gap-1.5">
-                  <Droplets className="w-4 h-4 text-[#0EA5E9] shrink-0" />
-                  <span className="text-sm font-semibold">Water</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => handleWaterSave(water + 8)}
-                  className="text-[10px] font-semibold text-[#0EA5E9] border border-[#0EA5E9]/40 px-1.5 py-0.5 rounded-md hover:bg-[#0EA5E9]/10 transition-colors shrink-0"
-                >
-                  +8oz
-                </button>
+              <div className="flex items-center gap-1.5">
+                <Droplets className="w-4 h-4 text-[#0EA5E9] shrink-0" />
+                <span className="text-sm font-semibold">Water</span>
               </div>
               <p className="text-xs text-neutral-500">{water} / {WATER_TARGET} oz</p>
               <Progress value={Math.min((water / WATER_TARGET) * 100, 100)} indicatorClassName="bg-[#0EA5E9]" />
-              <div className="h-[22px]" />
-              <input
-                ref={waterInputRef}
-                type="number"
-                defaultValue={water}
-                onBlur={(e) => { const v = parseInt(e.target.value, 10); if (!isNaN(v) && v >= 0) handleWaterSave(v); }}
-                onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-                className="w-full text-center text-sm font-semibold bg-neutral-100 dark:bg-neutral-800 rounded-lg px-2 py-1.5 border border-neutral-200 dark:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-[#0EA5E9] focus:border-transparent"
-              />
             </div>
 
             {/* ── Coffee ── */}
@@ -786,26 +724,6 @@ export function DashboardClient({
               </div>
               <p className="text-xs text-neutral-500">{coffee}/{COFFEE_LIMIT} · {coffee * CAFFEINE_PER_CUP}mg</p>
               <Progress value={Math.min((coffee / COFFEE_LIMIT) * 100, 100)} indicatorClassName={coffee > COFFEE_LIMIT ? 'bg-red-500' : 'bg-[#8B6914]'} />
-              <div className="flex items-center justify-center gap-2 py-0.5">
-                <button
-                  type="button"
-                  onClick={() => handleCoffeeSave(coffee - 1)}
-                  disabled={coffee <= 0}
-                  className="w-6 h-6 rounded-full border border-neutral-300 dark:border-neutral-600 flex items-center justify-center text-sm font-bold hover:border-[#8B6914] hover:text-[#8B6914] disabled:opacity-30 transition-colors"
-                >−</button>
-                <span className="text-base font-bold w-5 text-center">{coffee}</span>
-                <button
-                  type="button"
-                  onClick={() => handleCoffeeSave(coffee + 1)}
-                  className="w-6 h-6 rounded-full border border-neutral-300 dark:border-neutral-600 flex items-center justify-center text-sm font-bold hover:border-[#8B6914] hover:text-[#8B6914] transition-colors"
-                >+</button>
-              </div>
-              <input
-                type="number"
-                value={coffee}
-                onChange={(e) => { const v = parseInt(e.target.value, 10); if (!isNaN(v) && v >= 0) handleCoffeeSave(v); }}
-                className="w-full text-center text-sm font-semibold bg-neutral-100 dark:bg-neutral-800 rounded-lg px-2 py-1.5 border border-neutral-200 dark:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-[#8B6914] focus:border-transparent"
-              />
             </div>
           </div>
           {coffee > COFFEE_LIMIT && (
