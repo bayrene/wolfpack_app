@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useTransition, useMemo, useRef } from 'react';
+import { compressImage } from '@/lib/compress-image';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -588,17 +589,21 @@ export function TeethClient({ products, logs, checkups, gumLogs, documents, cont
     });
   };
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      setDocFileData(reader.result as string);
-      setDocFileType(file.type);
-      setDocFileSize(file.size);
-      if (!docName) setDocName(file.name.replace(/\.[^/.]+$/, ''));
-    };
-    reader.readAsDataURL(file);
+    const base64 = file.type.startsWith('image/')
+      ? await compressImage(file)
+      : await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+    setDocFileData(base64);
+    setDocFileType(file.type);
+    setDocFileSize(file.size);
+    if (!docName) setDocName(file.name.replace(/\.[^/.]+$/, ''));
   };
 
   const handleSaveDocument = () => {

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useTransition, useRef } from 'react';
+import { compressImage } from '@/lib/compress-image';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -133,18 +134,15 @@ function SeverityDots({ value }: { value: number }) {
 function PhotoUploadButton({ onPhotoSelect, photo }: { onPhotoSelect: (dataUrl: string) => void; photo: string | null }) {
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.size > 2 * 1024 * 1024) {
       toast.error('Photo must be under 2MB');
       return;
     }
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      onPhotoSelect(reader.result as string);
-    };
-    reader.readAsDataURL(file);
+    const base64 = await compressImage(file);
+    onPhotoSelect(base64);
   };
 
   return (

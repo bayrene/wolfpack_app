@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useTransition, useMemo, useRef } from 'react';
+import { compressImage } from '@/lib/compress-image';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -101,13 +102,12 @@ function PhotoUpload({ onSelect, photo }: { onSelect: (url: string) => void; pho
   const ref = useRef<HTMLInputElement>(null);
   return (
     <div>
-      <input ref={ref} type="file" accept="image/*" className="hidden" onChange={(e) => {
+      <input ref={ref} type="file" accept="image/*" className="hidden" onChange={async (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
         if (file.size > 2 * 1024 * 1024) { toast.error('Photo must be under 2MB'); return; }
-        const reader = new FileReader();
-        reader.onloadend = () => onSelect(reader.result as string);
-        reader.readAsDataURL(file);
+        const base64 = await compressImage(file);
+        onSelect(base64);
       }} />
       <Button type="button" variant="outline" size="sm" onClick={() => ref.current?.click()} className="gap-2">
         <Camera className="w-4 h-4" />{photo ? 'Change Photo' : 'Upload Photo'}
@@ -173,23 +173,26 @@ export function VetClient({ dogs, visits, bloodwork: bloodworkData, today, vetCo
     setTimeout(() => visitReceiptInputRef.current?.click(), 0);
   };
 
-  const handleReceiptFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleReceiptFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !uploadReceiptVisitId) return;
     if (file.size > 5 * 1024 * 1024) {
       toast.error('File too large (max 5MB)');
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const base64 = reader.result as string;
-      startTransition(async () => {
-        await updateVetVisit(uploadReceiptVisitId, { receipt: base64 });
-        toast.success('Receipt uploaded!');
-        setUploadReceiptVisitId(null);
-      });
-    };
-    reader.readAsDataURL(file);
+    const base64 = file.type.startsWith('image/')
+      ? await compressImage(file)
+      : await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+    startTransition(async () => {
+      await updateVetVisit(uploadReceiptVisitId!, { receipt: base64 });
+      toast.success('Receipt uploaded!');
+      setUploadReceiptVisitId(null);
+    });
     e.target.value = '';
   };
 
@@ -1112,13 +1115,19 @@ export function VetClient({ dogs, visits, bloodwork: bloodworkData, today, vetCo
                 type="file"
                 accept="image/*,.pdf"
                 className="hidden"
-                onChange={(e) => {
+                onChange={async (e) => {
                   const file = e.target.files?.[0];
                   if (!file) return;
                   setVisitReceiptType(file.type);
-                  const reader = new FileReader();
-                  reader.onload = () => { setVisitReceipt(reader.result as string); };
-                  reader.readAsDataURL(file);
+                  const base64 = file.type.startsWith('image/')
+                    ? await compressImage(file)
+                    : await new Promise<string>((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = () => resolve(reader.result as string);
+                        reader.onerror = reject;
+                        reader.readAsDataURL(file);
+                      });
+                  setVisitReceipt(base64);
                 }}
               />
               {visitReceipt ? (

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useTransition, useMemo, useRef } from 'react';
+import { compressImage } from '@/lib/compress-image';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -137,13 +138,19 @@ function FileUpload({ onSelect, label }: { onSelect: (url: string, name: string)
   const ref = useRef<HTMLInputElement>(null);
   return (
     <div>
-      <input ref={ref} type="file" accept="image/*,.pdf" className="hidden" onChange={(e) => {
+      <input ref={ref} type="file" accept="image/*,.pdf" className="hidden" onChange={async (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
         if (file.size > 5 * 1024 * 1024) { toast.error('File must be under 5MB'); return; }
-        const reader = new FileReader();
-        reader.onloadend = () => onSelect(reader.result as string, file.name);
-        reader.readAsDataURL(file);
+        const base64 = file.type.startsWith('image/')
+          ? await compressImage(file)
+          : await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result as string);
+              reader.onerror = reject;
+              reader.readAsDataURL(file);
+            });
+        onSelect(base64, file.name);
       }} />
       <Button type="button" variant="outline" size="sm" onClick={() => ref.current?.click()} className="gap-2">
         <Upload className="w-4 h-4" />{label}

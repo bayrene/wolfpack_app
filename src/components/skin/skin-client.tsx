@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef, useTransition } from 'react';
+import { compressImage } from '@/lib/compress-image';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -1364,12 +1365,11 @@ export function SkinClient({
                 type="file"
                 accept="image/*"
                 className="hidden"
-                onChange={(e) => {
+                onChange={async (e) => {
                   const file = e.target.files?.[0];
                   if (!file) return;
-                  const reader = new FileReader();
-                  reader.onload = () => setPhotoData(reader.result as string);
-                  reader.readAsDataURL(file);
+                  const base64 = await compressImage(file);
+                  setPhotoData(base64);
                 }}
               />
               {photoData ? (
