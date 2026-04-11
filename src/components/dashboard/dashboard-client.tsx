@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useTransition, useEffect, useCallback } from 'react';
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, BarChart, Bar } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, BarChart, Bar, LineChart, Line } from 'recharts';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -289,6 +289,8 @@ export function DashboardClient({
   const [isPending, startTransition] = useTransition();
   const [isSyncingOura, setIsSyncingOura] = useState(false);
   const [sleepHistoryRange, setSleepHistoryRange] = useState<7 | 30>(7);
+  const [weightPeriod, setWeightPeriod] = useState<'week' | 'month' | 'quarter' | 'semester' | 'year' | 'all'>('month');
+  const [weightOffset, setWeightOffset] = useState(0);
   const stepsInputRef = useRef<HTMLInputElement>(null);
   const waterInputRef = useRef<HTMLInputElement>(null);
   const [cardOrder, setCardOrder] = useState<CardId[]>(DEFAULT_ORDER);
@@ -956,138 +958,269 @@ export function DashboardClient({
             </Card>
           ),
           'weight': () => {
-            // Filter to only entries with weight data, sorted oldest→newest for the chart
-            const weightPoints = weightHistory
+            // All weight points from weightHistory (90 days), sorted oldest→newest
+            const allWeightPoints = weightHistory
               .filter((log) => log.weightLbs != null)
               .map((log) => ({
                 date: log.date,
                 weight: log.weightLbs as number,
-                label: (() => {
-                  const d = new Date(log.date + 'T00:00:00');
-                  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-                })(),
               }))
               .sort((a, b) => a.date.localeCompare(b.date));
 
-            // Thin out labels: only show one per ~14 days for readability
-            const tickIndices = new Set<number>();
-            if (weightPoints.length > 0) {
-              tickIndices.add(0);
-              tickIndices.add(weightPoints.length - 1);
-              let lastTickDate = weightPoints[0].date;
-              for (let i = 1; i < weightPoints.length - 1; i++) {
-                const msGap = new Date(weightPoints[i].date + 'T00:00:00').getTime() - new Date(lastTickDate + 'T00:00:00').getTime();
-                if (msGap >= 14 * 24 * 60 * 60 * 1000) {
-                  tickIndices.add(i);
-                  lastTickDate = weightPoints[i].date;
-                }
-              }
-            }
+            // Compute period window [windowStart, windowEnd] as ISO date strings
+            const todayDate = new Date(today + 'T00:00:00');
 
-            const lastRecorded = weightPoints.length > 0 ? weightPoints[weightPoints.length - 1] : null;
+            const getPeriodWindow = (period: typeof weightPeriod, offset: number): { start: Date; end: Date; label: string } => {
+              const ref = new Date(todayDate);
+
+              if (period === 'all') {
+                const earliest = allWeightPoints.length > 0
+                  ? new Date(allWeightPoints[0].date + 'T00:00:00')
+                  : new Date(ref.getFullYear(), 0, 1);
+                return { start: earliest, end: ref, label: 'All time' };
+              }
+
+              if (period === 'week') {
+                // Week: Mon–Sun, offset shifts by 7 days
+                const dayOfWeek = ref.getDay(); // 0=Sun
+                const daysToMon = (dayOfWeek + 6) % 7;
+                const monThisWeek = new Date(ref);
+                monThisWeek.setDate(ref.getDate() - daysToMon);
+                monThisWeek.setHours(0, 0, 0, 0);
+                const start = new Date(monThisWeek);
+                start.setDate(start.getDate() + offset * 7);
+                const end = new Date(start);
+                end.setDate(start.getDate() + 6);
+                const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                return { start, end, label: `${fmt(start)} – ${fmt(end).split(' ')[1]}, ${end.getFullYear()}` };
+              }
+
+              if (period === 'month') {
+                const base = new Date(ref.getFullYear(), ref.getMonth() + offset, 1);
+                const start = new Date(base.getFullYear(), base.getMonth(), 1);
+                const end = new Date(base.getFullYear(), base.getMonth() + 1, 0);
+                const label = start.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+                return { start, end, label };
+              }
+
+              if (period === 'quarter') {
+                const currentQ = Math.floor(ref.getMonth() / 3);
+                const targetQ = currentQ + offset;
+                const year = ref.getFullYear() + Math.floor(targetQ / 4);
+                const q = ((targetQ % 4) + 4) % 4;
+                const start = new Date(year, q * 3, 1);
+                const end = new Date(year, q * 3 + 3, 0);
+                const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+                return { start, end, label: `${fmt(start)} – ${fmt(end)}` };
+              }
+
+              if (period === 'semester') {
+                const currentS = ref.getMonth() < 6 ? 0 : 1;
+                const totalS = ref.getFullYear() * 2 + currentS + offset;
+                const year = Math.floor(totalS / 2);
+                const s = ((totalS % 2) + 2) % 2;
+                const start = new Date(year, s * 6, 1);
+                const end = new Date(year, s * 6 + 6, 0);
+                const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+                return { start, end, label: `${fmt(start)} – ${fmt(end)}` };
+              }
+
+              // year
+              const year = ref.getFullYear() + offset;
+              const start = new Date(year, 0, 1);
+              const end = new Date(year, 11, 31);
+              return { start, end, label: String(year) };
+            };
+
+            const { start: windowStart, end: windowEnd, label: windowLabel } = getPeriodWindow(weightPeriod, weightOffset);
+            const windowStartStr = windowStart.toISOString().split('T')[0];
+            const windowEndStr = windowEnd.toISOString().split('T')[0];
+
+            // Clamp windowEnd to today so we never show future
+            const effectiveEndStr = windowEndStr > today ? today : windowEndStr;
+
+            const periodPoints = allWeightPoints.filter(
+              (p) => p.date >= windowStartStr && p.date <= effectiveEndStr,
+            );
+
+            // Build chart data with human-readable x-axis labels
+            const chartPoints = periodPoints.map((p) => {
+              const d = new Date(p.date + 'T00:00:00');
+              let xLabel: string;
+              if (weightPeriod === 'week') {
+                xLabel = d.toLocaleDateString('en-US', { weekday: 'short' });
+              } else if (weightPeriod === 'month') {
+                xLabel = String(d.getDate());
+              } else {
+                xLabel = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+              }
+              return { date: p.date, weight: p.weight, label: xLabel };
+            });
+
+            // Compute Y domain: actual range ± 2 lbs, no zero baseline
+            const chartWeights = chartPoints.map((p) => p.weight);
+            const yMin = chartWeights.length > 0 ? Math.floor(Math.min(...chartWeights)) - 2 : 140;
+            const yMax = chartWeights.length > 0 ? Math.ceil(Math.max(...chartWeights)) + 2 : 200;
+
+            // Trend: last minus first in period
+            const periodFirst = chartPoints.length > 0 ? chartPoints[0].weight : null;
+            const periodLast = chartPoints.length > 0 ? chartPoints[chartPoints.length - 1].weight : null;
+            const trendDelta = periodFirst != null && periodLast != null ? periodLast - periodFirst : null;
+            const STABLE_THRESHOLD = 0.5;
+            const trendStatus: 'stable' | 'gaining' | 'losing' =
+              trendDelta == null || Math.abs(trendDelta) < STABLE_THRESHOLD
+                ? 'stable'
+                : trendDelta > 0 ? 'gaining' : 'losing';
+            const trendColor = trendStatus === 'losing' ? '#4ade80' : trendStatus === 'gaining' ? '#f87171' : '#9ca3af';
+            const trendArrow = trendStatus === 'losing' ? '↓' : trendStatus === 'gaining' ? '↑' : '→';
+
+            const fmtTrend = (n: number | null) => {
+              if (n == null) return '—';
+              const sign = n > 0 ? '+' : '';
+              return `${sign}${n.toFixed(1)} lb`;
+            };
+
+            // Latest weight to display large
+            const lastRecorded = allWeightPoints.length > 0 ? allWeightPoints[allWeightPoints.length - 1] : null;
             const displayWeight = todayWeight ?? lastRecorded?.weight ?? null;
             const isLastRecorded = todayWeight == null && lastRecorded != null;
 
-            const weights = weightPoints.map((p) => p.weight);
-            const minW = weights.length > 0 ? Math.floor(Math.min(...weights)) - 3 : 0;
-            const maxW = weights.length > 0 ? Math.ceil(Math.max(...weights)) + 3 : 300;
+            const PERIOD_TABS: Array<{ id: typeof weightPeriod; label: string }> = [
+              { id: 'week', label: 'Week' },
+              { id: 'month', label: 'Month' },
+              { id: 'quarter', label: 'Quarter' },
+              { id: 'semester', label: 'Semester' },
+              { id: 'year', label: 'Year' },
+              { id: 'all', label: 'All' },
+            ];
 
-            // Stats
-            const firstWeight = weightPoints.length > 0 ? weightPoints[0].weight : null;
-            const lowestWeight = weights.length > 0 ? Math.min(...weights) : null;
-            const changeFromStart = displayWeight != null && firstWeight != null ? displayWeight - firstWeight : null;
+            // Can we go forward? Only if window end is before today
+            const canGoForward = weightPeriod !== 'all' && windowEndStr < today;
+            // Can we go back? Only if there's any data before the window start
+            const canGoBack = weightPeriod !== 'all' && allWeightPoints.some((p) => p.date < windowStartStr);
 
-            const thirtyDaysAgo = new Date();
-            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-            const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split('T')[0];
-            const pointsIn30Days = weightPoints.filter((p) => p.date >= thirtyDaysAgoStr);
-            const change30d = pointsIn30Days.length >= 2 && displayWeight != null
-              ? displayWeight - pointsIn30Days[0].weight
-              : null;
-
-            const fmtChange = (n: number | null) => {
-              if (n == null) return null;
-              const sign = n < 0 ? '' : '+';
-              return `${sign}${n.toFixed(1)} lbs`;
-            };
+            // Build x-axis tick config: thin out ticks if too many points
+            const maxTicks = weightPeriod === 'week' ? 7 : weightPeriod === 'month' ? 10 : 8;
+            const tickStep = chartPoints.length > maxTicks ? Math.ceil(chartPoints.length / maxTicks) : 1;
+            const visibleTicks = new Set<number>();
+            chartPoints.forEach((_, i) => {
+              if (i === 0 || i === chartPoints.length - 1 || i % tickStep === 0) visibleTicks.add(i);
+            });
 
             return (
-              <Card className="col-span-full">
+              <Card className="border-neutral-800 bg-neutral-950 col-span-full">
                 <CardContent className="py-5 px-5">
-                  {/* Header row */}
+
+                  {/* Current weight display */}
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex items-center gap-2">
-                      <Scale className="w-5 h-5 text-[#F59E0B]" />
-                      <p className="text-base font-semibold">Weight Tracking</p>
+                      <Scale className="w-5 h-5 text-[#818cf8]" />
+                      <p className="text-base font-semibold text-white">Weight</p>
                     </div>
-                    {displayWeight != null && (
-                      <div className="text-right">
-                        <p className="text-4xl font-bold text-[#F59E0B] leading-none">{displayWeight.toFixed(1)}<span className="text-lg font-medium text-neutral-400 ml-1">lbs</span></p>
-                        {isLastRecorded && lastRecorded && (
-                          <p className="text-[10px] text-neutral-400 mt-1">
-                            Last recorded · {new Date(lastRecorded.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    <div className="text-right">
+                      {displayWeight != null ? (
+                        <>
+                          <p className="text-4xl font-bold text-white leading-none">
+                            {displayWeight.toFixed(1)}
+                            <span className="text-lg font-medium text-neutral-400 ml-1">lbs</span>
                           </p>
-                        )}
-                      </div>
-                    )}
-                    {displayWeight == null && (
-                      <p className="text-sm text-neutral-400">No data</p>
-                    )}
+                          {isLastRecorded && lastRecorded && (
+                            <p className="text-[10px] text-neutral-500 mt-0.5">
+                              Last recorded · {new Date(lastRecorded.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                            </p>
+                          )}
+                        </>
+                      ) : (
+                        <p className="text-sm text-neutral-400">No data</p>
+                      )}
+                    </div>
                   </div>
 
-                  {/* Stat pills */}
-                  {weightPoints.length > 1 && (
-                    <div className="flex flex-wrap gap-3 mb-4">
-                      {changeFromStart != null && (
-                        <div className="flex flex-col bg-neutral-100 dark:bg-neutral-800 rounded-xl px-4 py-2 min-w-[90px]">
-                          <span className="text-[10px] uppercase tracking-wide text-neutral-500 mb-0.5">Since start</span>
-                          <span className={`text-sm font-bold ${changeFromStart < 0 ? 'text-emerald-500' : changeFromStart > 0 ? 'text-rose-500' : 'text-neutral-400'}`}>
-                            {fmtChange(changeFromStart)}
-                          </span>
-                        </div>
-                      )}
-                      {change30d != null && (
-                        <div className="flex flex-col bg-neutral-100 dark:bg-neutral-800 rounded-xl px-4 py-2 min-w-[90px]">
-                          <span className="text-[10px] uppercase tracking-wide text-neutral-500 mb-0.5">Last 30 days</span>
-                          <span className={`text-sm font-bold ${change30d < 0 ? 'text-emerald-500' : change30d > 0 ? 'text-rose-500' : 'text-neutral-400'}`}>
-                            {fmtChange(change30d)}
-                          </span>
-                        </div>
-                      )}
-                      {lowestWeight != null && (
-                        <div className="flex flex-col bg-neutral-100 dark:bg-neutral-800 rounded-xl px-4 py-2 min-w-[90px]">
-                          <span className="text-[10px] uppercase tracking-wide text-neutral-500 mb-0.5">All-time low</span>
-                          <span className="text-sm font-bold text-[#F59E0B]">{lowestWeight.toFixed(1)} lbs</span>
-                        </div>
-                      )}
+                  {/* Period tabs */}
+                  <div className="flex items-center gap-1 mb-4 flex-wrap">
+                    {PERIOD_TABS.map((tab) => (
+                      <button
+                        key={tab.id}
+                        onClick={() => { setWeightPeriod(tab.id); setWeightOffset(0); }}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                          weightPeriod === tab.id
+                            ? 'bg-neutral-700 text-white'
+                            : 'text-neutral-400 hover:text-neutral-200'
+                        }`}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Navigation row */}
+                  {weightPeriod !== 'all' && (
+                    <div className="flex items-center justify-between mb-3">
+                      <button
+                        onClick={() => canGoBack && setWeightOffset((o) => o - 1)}
+                        disabled={!canGoBack}
+                        className="p-1 rounded-md text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        aria-label="Previous period"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                      </button>
+                      <span className="text-xs font-medium text-neutral-300">{windowLabel}</span>
+                      <button
+                        onClick={() => canGoForward && setWeightOffset((o) => o + 1)}
+                        disabled={!canGoForward}
+                        className="p-1 rounded-md text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        aria-label="Next period"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
+                  {weightPeriod === 'all' && (
+                    <div className="flex items-center justify-center mb-3">
+                      <span className="text-xs font-medium text-neutral-300">{windowLabel}</span>
                     </div>
                   )}
 
-                  {weightPoints.length > 1 ? (
-                    <div style={{ height: 320 }}>
+                  {/* Status row: WEIGHT status + TREND */}
+                  <div className="flex items-center justify-between mb-4 px-1">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-widest text-neutral-500 mb-0.5">Weight</p>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-base font-bold" style={{ color: trendColor }}>{trendArrow}</span>
+                        <span className="text-sm font-semibold text-white capitalize">{trendStatus}</span>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[10px] uppercase tracking-widest text-neutral-500 mb-0.5">Trend</p>
+                      <p className="text-sm font-semibold" style={{ color: trendColor }}>{fmtTrend(trendDelta)}</p>
+                    </div>
+                  </div>
+
+                  {/* Chart */}
+                  {chartPoints.length > 1 ? (
+                    <div style={{ height: 220 }}>
                       <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={weightPoints} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
-                          <defs>
-                            <linearGradient id="weightGrad" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor="#F59E0B" stopOpacity={0.25} />
-                              <stop offset="95%" stopColor="#F59E0B" stopOpacity={0} />
-                            </linearGradient>
-                          </defs>
-                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(120,120,120,0.12)" vertical={false} />
+                        <LineChart data={chartPoints} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
+                          <CartesianGrid
+                            strokeDasharray="4 4"
+                            stroke="rgba(255,255,255,0.06)"
+                            vertical={true}
+                            horizontal={false}
+                          />
                           <XAxis
                             dataKey="label"
-                            tick={{ fontSize: 11, fill: '#6b7280' }}
+                            tick={{ fontSize: 10, fill: '#6b7280' }}
                             tickLine={false}
                             axisLine={false}
-                            tickFormatter={(_value, index) => tickIndices.has(index) ? _value : ''}
+                            tickFormatter={(_value, index) => visibleTicks.has(index) ? _value : ''}
                             interval={0}
                           />
                           <YAxis
-                            domain={[minW, maxW]}
-                            tick={{ fontSize: 11, fill: '#6b7280' }}
+                            domain={[yMin, yMax]}
+                            tick={{ fontSize: 10, fill: '#6b7280' }}
                             tickLine={false}
                             axisLine={false}
-                            width={44}
+                            width={36}
                             tickFormatter={(v: number) => `${v}`}
                           />
                           <Tooltip
@@ -1100,25 +1233,40 @@ export function DashboardClient({
                             }}
                             // eslint-disable-next-line @typescript-eslint/no-explicit-any
                             formatter={(value: any) => [typeof value === 'number' ? `${value.toFixed(1)} lbs` : `${value} lbs`, 'Weight']}
+                            labelFormatter={(label, payload) => {
+                              if (payload && payload.length > 0) {
+                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                const item = payload[0] as any;
+                                if (item?.payload?.date) {
+                                  return new Date(item.payload.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                                }
+                              }
+                              return label;
+                            }}
                             labelStyle={{ color: '#9ca3af', marginBottom: 2 }}
                           />
-                          <Area
+                          <Line
                             type="monotone"
                             dataKey="weight"
-                            stroke="#F59E0B"
-                            strokeWidth={2.5}
-                            fill="url(#weightGrad)"
-                            dot={false}
-                            activeDot={{ r: 5, fill: '#F59E0B', strokeWidth: 0 }}
+                            stroke="#818cf8"
+                            strokeWidth={2}
+                            strokeDasharray="5 3"
+                            dot={{ r: 3, fill: '#818cf8', strokeWidth: 0 }}
+                            activeDot={{ r: 5, fill: '#818cf8', strokeWidth: 0 }}
                           />
-                        </AreaChart>
+                        </LineChart>
                       </ResponsiveContainer>
                     </div>
-                  ) : weightPoints.length === 1 ? (
-                    <p className="text-xs text-neutral-400 mt-2">Log more entries to see your trend.</p>
+                  ) : chartPoints.length === 1 ? (
+                    <div className="flex items-center justify-center h-[220px]">
+                      <p className="text-sm text-neutral-400">Only one entry — log more to see the trend.</p>
+                    </div>
                   ) : (
-                    <p className="text-xs text-neutral-400 mt-2">No weight entries in the last 90 days.</p>
+                    <div className="flex items-center justify-center h-[220px]">
+                      <p className="text-sm text-neutral-400">No weight data for this period.</p>
+                    </div>
                   )}
+
                 </CardContent>
               </Card>
             );
