@@ -22,12 +22,8 @@ export function formatDate(date: string): string {
 }
 
 export function todayISO(): string {
-  const d = new Date();
-  // Use local date components to avoid UTC offset shifting the date for late-night users
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  // Use America/Los_Angeles so server date matches user's Pacific timezone
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });
 }
 
 export function daysUntil(dateStr: string): number {
