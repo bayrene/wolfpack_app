@@ -148,10 +148,10 @@ const MICRO_BAR_CONFIG = [
   { key: 'potassium' as const, label: 'Potassium', color: '#06B6D4', unit: 'mg' },
 ];
 
-const CARD_IDS = ['oura', 'teeth', 'quick-log', 'nutrition', 'steps', 'water', 'coffee', 'supplements', 'meals'] as const;
+const CARD_IDS = ['oura', 'teeth', 'quick-log', 'nutrition', 'supplements', 'meals'] as const;
 type CardId = typeof CARD_IDS[number];
 const DEFAULT_ORDER: CardId[] = [...CARD_IDS];
-const STORAGE_KEY = 'dashboard-card-order-v13';
+const STORAGE_KEY = 'dashboard-card-order-v14';
 
 function ReorderableCard({ children, id, index, total, onMoveUp, onMoveDown }: {
   children: React.ReactNode;
@@ -692,6 +692,130 @@ export function DashboardClient({
         return weightCard;
       })()}
 
+      {/* Daily Stats — Steps · Water · Coffee */}
+      <Card>
+        <CardContent className="py-4 px-4">
+          <div className="grid grid-cols-3 divide-x divide-neutral-100 dark:divide-neutral-800">
+            {/* ── Steps ── */}
+            <div className="pr-3 space-y-2">
+              <div className="flex items-center gap-1.5">
+                <Footprints className="w-4 h-4 text-[#2A9D8F] shrink-0" />
+                <span className="text-sm font-semibold">Steps</span>
+              </div>
+              <p className="text-xs text-neutral-500">{steps.toLocaleString()} / {STEPS_TARGET.toLocaleString()}</p>
+              <Progress value={(steps / STEPS_TARGET) * 100} indicatorClassName="bg-[#2A9D8F]" />
+              {/* Date nav */}
+              <div className="flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => navigateStepsDate('prev')}
+                  className="p-0.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5 text-neutral-500" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!isStepsToday) {
+                      setStepsDate(today);
+                      startTransition(async () => {
+                        const { getDailyLog } = await import('@/db/queries/daily-log');
+                        const log = await getDailyLog(today, 'me');
+                        setSteps(log?.steps ?? todaySteps);
+                        if (stepsInputRef.current) stepsInputRef.current.value = String(log?.steps ?? todaySteps);
+                      });
+                    }
+                  }}
+                  className={`text-[10px] font-medium px-1 text-center truncate max-w-[60px] ${isStepsToday ? 'text-[#2A9D8F]' : 'text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300'}`}
+                >
+                  {stepsDateLabel}
+                </button>
+                <button
+                  type="button"
+                  disabled={isStepsToday}
+                  onClick={() => navigateStepsDate('next')}
+                  className="p-0.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors disabled:opacity-30"
+                >
+                  <ChevronRight className="w-3.5 h-3.5 text-neutral-500" />
+                </button>
+              </div>
+              <input
+                ref={stepsInputRef}
+                type="number"
+                defaultValue={steps}
+                key={stepsDate}
+                onBlur={(e) => { const v = parseInt(e.target.value, 10); if (!isNaN(v) && v >= 0) handleStepsSave(v); }}
+                onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                className="w-full text-center text-sm font-semibold bg-neutral-100 dark:bg-neutral-800 rounded-lg px-2 py-1.5 border border-neutral-200 dark:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-[#2A9D8F] focus:border-transparent"
+              />
+            </div>
+
+            {/* ── Water ── */}
+            <div className="px-3 space-y-2">
+              <div className="flex items-center justify-between gap-1">
+                <div className="flex items-center gap-1.5">
+                  <Droplets className="w-4 h-4 text-[#0EA5E9] shrink-0" />
+                  <span className="text-sm font-semibold">Water</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleWaterSave(water + 8)}
+                  className="text-[10px] font-semibold text-[#0EA5E9] border border-[#0EA5E9]/40 px-1.5 py-0.5 rounded-md hover:bg-[#0EA5E9]/10 transition-colors shrink-0"
+                >
+                  +8oz
+                </button>
+              </div>
+              <p className="text-xs text-neutral-500">{water} / {WATER_TARGET} oz</p>
+              <Progress value={Math.min((water / WATER_TARGET) * 100, 100)} indicatorClassName="bg-[#0EA5E9]" />
+              <div className="h-[22px]" />
+              <input
+                ref={waterInputRef}
+                type="number"
+                defaultValue={water}
+                onBlur={(e) => { const v = parseInt(e.target.value, 10); if (!isNaN(v) && v >= 0) handleWaterSave(v); }}
+                onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                className="w-full text-center text-sm font-semibold bg-neutral-100 dark:bg-neutral-800 rounded-lg px-2 py-1.5 border border-neutral-200 dark:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-[#0EA5E9] focus:border-transparent"
+              />
+            </div>
+
+            {/* ── Coffee ── */}
+            <div className="pl-3 space-y-2">
+              <div className="flex items-center gap-1.5">
+                <Coffee className="w-4 h-4 text-[#8B6914] shrink-0" />
+                <span className="text-sm font-semibold">Coffee</span>
+              </div>
+              <p className="text-xs text-neutral-500">{coffee}/{COFFEE_LIMIT} · {coffee * CAFFEINE_PER_CUP}mg</p>
+              <Progress value={Math.min((coffee / COFFEE_LIMIT) * 100, 100)} indicatorClassName={coffee > COFFEE_LIMIT ? 'bg-red-500' : 'bg-[#8B6914]'} />
+              <div className="flex items-center justify-center gap-2 py-0.5">
+                <button
+                  type="button"
+                  onClick={() => handleCoffeeSave(coffee - 1)}
+                  disabled={coffee <= 0}
+                  className="w-6 h-6 rounded-full border border-neutral-300 dark:border-neutral-600 flex items-center justify-center text-sm font-bold hover:border-[#8B6914] hover:text-[#8B6914] disabled:opacity-30 transition-colors"
+                >−</button>
+                <span className="text-base font-bold w-5 text-center">{coffee}</span>
+                <button
+                  type="button"
+                  onClick={() => handleCoffeeSave(coffee + 1)}
+                  className="w-6 h-6 rounded-full border border-neutral-300 dark:border-neutral-600 flex items-center justify-center text-sm font-bold hover:border-[#8B6914] hover:text-[#8B6914] transition-colors"
+                >+</button>
+              </div>
+              <input
+                type="number"
+                value={coffee}
+                onChange={(e) => { const v = parseInt(e.target.value, 10); if (!isNaN(v) && v >= 0) handleCoffeeSave(v); }}
+                className="w-full text-center text-sm font-semibold bg-neutral-100 dark:bg-neutral-800 rounded-lg px-2 py-1.5 border border-neutral-200 dark:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-[#8B6914] focus:border-transparent"
+              />
+            </div>
+          </div>
+          {coffee > COFFEE_LIMIT && (
+            <p className="text-[10px] text-red-500 mt-3 flex items-center gap-1">
+              <AlertTriangle className="w-3 h-3" /> Over limit — {COFFEE_LIMIT * CAFFEINE_PER_CUP}mg max recommended
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Reorderable Cards */}
       <div className="space-y-4">
       {cardOrder.map((id, index) => {
@@ -1062,180 +1186,6 @@ export function DashboardClient({
                     );
                   })}
                 </div>
-              </CardContent>
-            </Card>
-          ),
-          'steps': () => (
-            <Card>
-              <CardContent className="py-4">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <Footprints className="w-5 h-5 text-[#2A9D8F]" />
-                    <p className="text-sm font-medium">Steps</p>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={() => navigateStepsDate('prev')}
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                    </Button>
-                    <button
-                      onClick={() => {
-                        if (!isStepsToday) {
-                          setStepsDate(today);
-                          startTransition(async () => {
-                            const { getDailyLog } = await import('@/db/queries/daily-log');
-                            const log = await getDailyLog(today, 'me');
-                            setSteps(log?.steps ?? todaySteps);
-                            if (stepsInputRef.current) {
-                              stepsInputRef.current.value = String(log?.steps ?? todaySteps);
-                            }
-                          });
-                        }
-                      }}
-                      className={`text-xs font-medium px-2 py-1 rounded-md transition-colors min-w-[100px] text-center ${
-                        isStepsToday
-                          ? 'text-[#2A9D8F]'
-                          : 'text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800'
-                      }`}
-                    >
-                      {stepsDateLabel}
-                    </button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      disabled={isStepsToday}
-                      onClick={() => navigateStepsDate('next')}
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </div>
-                <div className="flex items-center justify-between">
-                  <p className="text-xs text-neutral-500">{steps.toLocaleString()} / {STEPS_TARGET.toLocaleString()}</p>
-                  <input
-                    ref={stepsInputRef}
-                    type="number"
-                    defaultValue={steps}
-                    key={stepsDate}
-                    onBlur={(e) => {
-                      const val = parseInt(e.target.value, 10);
-                      if (!isNaN(val) && val >= 0) handleStepsSave(val);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        (e.target as HTMLInputElement).blur();
-                      }
-                    }}
-                    className="w-28 text-right text-sm font-semibold bg-neutral-100 dark:bg-neutral-800 rounded-lg px-3 py-1.5 border border-neutral-200 dark:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-[#2A9D8F] focus:border-transparent"
-                  />
-                </div>
-                <Progress value={(steps / STEPS_TARGET) * 100} indicatorClassName="bg-[#2A9D8F]" className="mt-3" />
-                {!isStepsToday && (
-                  <p className="text-[10px] text-neutral-400 mt-2 flex items-center gap-1">
-                    <Calendar className="w-3 h-3" /> Editing past date — tap &quot;Today&quot; to go back
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-          ),
-          'water': () => (
-            <Card>
-              <CardContent className="py-4">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <Droplets className="w-5 h-5 text-[#0EA5E9]" />
-                    <p className="text-sm font-medium">Water</p>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="text-[#0EA5E9] border-[#0EA5E9]/40 hover:bg-[#0EA5E9]/10"
-                    onClick={() => handleWaterSave(water + 8)}
-                  >
-                    +8 oz
-                  </Button>
-                </div>
-                <div className="flex items-center justify-between">
-                  <p className="text-xs text-neutral-500">{water} / {WATER_TARGET} oz</p>
-                  <input
-                    ref={waterInputRef}
-                    type="number"
-                    defaultValue={water}
-                    onBlur={(e) => {
-                      const val = parseInt(e.target.value, 10);
-                      if (!isNaN(val) && val >= 0) handleWaterSave(val);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        (e.target as HTMLInputElement).blur();
-                      }
-                    }}
-                    className="w-28 text-right text-sm font-semibold bg-neutral-100 dark:bg-neutral-800 rounded-lg px-3 py-1.5 border border-neutral-200 dark:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-[#0EA5E9] focus:border-transparent"
-                  />
-                </div>
-                <Progress value={Math.min((water / WATER_TARGET) * 100, 100)} indicatorClassName="bg-[#0EA5E9]" className="mt-3" />
-              </CardContent>
-            </Card>
-          ),
-          'coffee': () => (
-            <Card>
-              <CardContent className="py-4">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <Coffee className="w-5 h-5 text-[#8B6914]" />
-                    <p className="text-sm font-medium">Black Coffee</p>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="text-[#8B6914] border-[#8B6914]/40 hover:bg-[#8B6914]/10"
-                    onClick={() => handleCoffeeSave(coffee + 1)}
-                  >
-                    +1 cup
-                  </Button>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs text-neutral-500">
-                      {coffee} / {COFFEE_LIMIT} cups &bull; {coffee * CAFFEINE_PER_CUP}mg caffeine
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-8 w-8"
-                      onClick={() => handleCoffeeSave(coffee - 1)}
-                      disabled={coffee <= 0}
-                    >
-                      <span className="text-lg font-bold">-</span>
-                    </Button>
-                    <span className="text-lg font-bold w-6 text-center">{coffee}</span>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-8 w-8"
-                      onClick={() => handleCoffeeSave(coffee + 1)}
-                    >
-                      <span className="text-lg font-bold">+</span>
-                    </Button>
-                  </div>
-                </div>
-                <Progress
-                  value={Math.min((coffee / COFFEE_LIMIT) * 100, 100)}
-                  indicatorClassName={coffee > COFFEE_LIMIT ? 'bg-red-500' : 'bg-[#8B6914]'}
-                  className="mt-3"
-                />
-                {coffee > COFFEE_LIMIT && (
-                  <p className="text-[10px] text-red-500 mt-1.5 flex items-center gap-1">
-                    <AlertTriangle className="w-3 h-3" /> Over recommended daily limit ({COFFEE_LIMIT} cups / {COFFEE_LIMIT * CAFFEINE_PER_CUP}mg)
-                  </p>
-                )}
               </CardContent>
             </Card>
           ),
