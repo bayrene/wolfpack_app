@@ -305,7 +305,7 @@ export function QuickLogModal({ open, onOpenChange, recipes, defaultMealType, to
                   size="icon"
                   variant="outline"
                   className="h-12 w-12 rounded-xl"
-                  onClick={() => setServings(Math.max(0.5, servings - 0.5))}
+                  onClick={() => setServings(Math.max(1, servings - 1))}
                 >
                   <Minus className="w-5 h-5" />
                 </Button>
@@ -319,26 +319,10 @@ export function QuickLogModal({ open, onOpenChange, recipes, defaultMealType, to
                   size="icon"
                   variant="outline"
                   className="h-12 w-12 rounded-xl"
-                  onClick={() => setServings(servings + 0.5)}
+                  onClick={() => setServings(servings + 1)}
                 >
                   <Plus className="w-5 h-5" />
                 </Button>
-              </div>
-              {/* Quick picks */}
-              <div className="flex justify-center gap-2 mt-3">
-                {[1, 2, 3, 4].map((n) => (
-                  <button
-                    key={n}
-                    onClick={() => setServings(n)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                      servings === n
-                        ? 'border-[#E07A3A] bg-[#E07A3A]/10 text-[#E07A3A]'
-                        : 'border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-800'
-                    }`}
-                  >
-                    {n}x
-                  </button>
-                ))}
               </div>
             </div>
 
