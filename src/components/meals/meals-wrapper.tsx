@@ -3,6 +3,9 @@
 import React, { useState } from 'react';
 import { MealLogClient } from '@/components/meals/meal-log-client';
 import { NutritionClient } from '@/components/nutrition/nutrition-client';
+import { QuickLogModal } from '@/components/meals/quick-log-modal';
+import { Button } from '@/components/ui/button';
+import { Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Recipe } from '@/db/schema';
 
@@ -80,16 +83,22 @@ export function MealsWrapper({
   fastFoodBaseline,
 }: Props) {
   const [tab, setTab] = useState<Tab>('log');
+  const [quickLogOpen, setQuickLogOpen] = useState(false);
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8 pb-24 md:pb-8 space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold" style={{ fontFamily: '"Bricolage Grotesque", sans-serif' }}>
-          Meals
-        </h1>
-        <p className="text-neutral-500 dark:text-neutral-400 text-sm mt-1">
-          Log meals & track nutrition
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold" style={{ fontFamily: '"Bricolage Grotesque", sans-serif' }}>
+            Meals
+          </h1>
+          <p className="text-neutral-500 dark:text-neutral-400 text-sm mt-1">
+            Log meals &amp; track nutrition
+          </p>
+        </div>
+        <Button onClick={() => setQuickLogOpen(true)}>
+          <Plus className="w-4 h-4" /> Log Meal
+        </Button>
       </div>
 
       <div className="flex gap-1 bg-neutral-100 dark:bg-neutral-800 rounded-lg p-1">
@@ -134,6 +143,14 @@ export function MealsWrapper({
           embedded
         />
       )}
+
+      <QuickLogModal
+        open={quickLogOpen}
+        onOpenChange={setQuickLogOpen}
+        recipes={recipes}
+        defaultMealType="snack"
+        today={today}
+      />
     </div>
   );
 }
