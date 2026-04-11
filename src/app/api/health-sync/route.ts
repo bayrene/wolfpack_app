@@ -73,7 +73,7 @@ export async function POST(req: Request) {
       }
     }
 
-    if (nameLower === 'dietarywater' || nameLower === 'water' || nameLower === 'dietarywater(l)') {
+    if (nameLower === 'dietarywater' || nameLower === 'water' || nameLower === 'dietarywater(l)' || nameLower === 'dietary_water') {
       for (const dp of metric.data) {
         const date = parseDate(dp.date);
         updates[date] = updates[date] ?? {};
