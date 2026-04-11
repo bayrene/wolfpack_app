@@ -1,14 +1,25 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Clock, Snowflake, DollarSign, Flame } from 'lucide-react';
+import { Clock, Snowflake, DollarSign, Flame, Trash2 } from 'lucide-react';
 import { MEAL_TYPE_LABELS, DIFFICULTY_LABELS } from '@/lib/constants';
+import { deleteRecipe } from '@/db/queries/recipes';
 import type { Recipe } from '@/db/schema';
 
-export function RecipeGrid({ recipes }: { recipes: Recipe[] }) {
+export function RecipeGrid({ recipes: initialRecipes }: { recipes: Recipe[] }) {
+  const [recipes, setRecipes] = useState(initialRecipes);
+
+  async function handleDelete(e: React.MouseEvent, id: number) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!confirm('Delete this recipe?')) return;
+    setRecipes(r => r.filter(x => x.id !== id));
+    await deleteRecipe(id);
+  }
+
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
       {recipes.map((recipe, i) => (
@@ -19,9 +30,17 @@ export function RecipeGrid({ recipes }: { recipes: Recipe[] }) {
                 <h3 className="font-semibold text-base leading-tight" style={{ fontFamily: '"Bricolage Grotesque", sans-serif' }}>
                   {recipe.name}
                 </h3>
-                <Badge variant={recipe.category as 'breakfast' | 'lunch' | 'dinner' | 'snack'}>
-                  {MEAL_TYPE_LABELS[recipe.category]}
-                </Badge>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <Badge variant={recipe.category as 'breakfast' | 'lunch' | 'dinner' | 'snack'}>
+                    {MEAL_TYPE_LABELS[recipe.category]}
+                  </Badge>
+                  <button
+                    onClick={(e) => handleDelete(e, recipe.id)}
+                    className="p-1 rounded text-neutral-500 hover:text-red-500 hover:bg-red-500/10 transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
 
               {recipe.description && (
