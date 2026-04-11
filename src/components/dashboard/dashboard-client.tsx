@@ -148,10 +148,10 @@ const MICRO_BAR_CONFIG = [
   { key: 'potassium' as const, label: 'Potassium', color: '#06B6D4', unit: 'mg' },
 ];
 
-const CARD_IDS = ['oura', 'teeth', 'quick-log', 'nutrition', 'steps', 'weight', 'water', 'coffee', 'supplements', 'meals'] as const;
+const CARD_IDS = ['weight', 'oura', 'teeth', 'quick-log', 'nutrition', 'steps', 'water', 'coffee', 'supplements', 'meals'] as const;
 type CardId = typeof CARD_IDS[number];
 const DEFAULT_ORDER: CardId[] = [...CARD_IDS];
-const STORAGE_KEY = 'dashboard-card-order-v11';
+const STORAGE_KEY = 'dashboard-card-order-v12';
 
 function ReorderableCard({ children, id, index, total, onMoveUp, onMoveDown }: {
   children: React.ReactNode;
@@ -636,6 +636,7 @@ export function DashboardClient({
       )}
 
       {/* Reorderable Cards */}
+      <div className="space-y-4">
       {cardOrder.map((id, index) => {
         const renderer: Record<CardId, () => React.ReactNode> = {
           'oura': () => {
@@ -1406,6 +1407,7 @@ export function DashboardClient({
           </ReorderableCard>
         );
       })}
+      </div>
 
       {/* Brush Log Modal */}
       {brushModal.open && (
