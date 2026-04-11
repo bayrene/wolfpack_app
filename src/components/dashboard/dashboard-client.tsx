@@ -1140,10 +1140,15 @@ export function DashboardClient({
             const brushSessions = localDental.filter(l => l.activity === 'brush').sort((a, b) => a.time.localeCompare(b.time));
             const amBrushes = brushSessions.filter(l => l.time < '12:00');
             const pmBrushes = brushSessions.filter(l => l.time >= '12:00');
-            const hasMouthwash = localDental.some(l => l.activity === 'mouthwash');
-            const hasFloss = localDental.some(l => l.activity === 'floss_pick');
-            const hasWaterFlosser = localDental.some(l => l.activity === 'water_flosser');
-            const hasExtras = hasMouthwash || hasFloss || hasWaterFlosser || localDental.some(l => l.notes);
+
+            // Per-session completeness: a brush is "complete" if it has notes OR extras logged at the same time
+            const brushHasExtras = (brush: (typeof brushSessions)[0]) => {
+              const extrasAtTime = localDental.filter(l =>
+                l.id !== brush.id && l.time === brush.time &&
+                (l.activity === 'mouthwash' || l.activity === 'floss_pick' || l.activity === 'water_flosser')
+              );
+              return extrasAtTime.length > 0 || !!brush.notes;
+            };
 
             const fmtDur = (sec: number | null | undefined) => {
               if (!sec) return '';
@@ -1157,14 +1162,17 @@ export function DashboardClient({
               return `${h12}:${String(m).padStart(2, '0')}${ampm}`;
             };
             const openBrushModal = (slot: 'am' | 'pm', brush?: (typeof brushSessions)[0]) => {
-              if (brush && hasExtras) {
+              if (brush && brushHasExtras(brush)) {
+                // Complete session — remove it
                 setLocalDental(prev => prev.filter(l => l.id !== brush.id));
                 startTransition(async () => { await removeDentalLog(brush.id); toast.success('Brushing removed'); });
-              } else if (brush && !hasExtras) {
+              } else if (brush) {
+                // Incomplete session — open modal in extras-only mode
                 setBrushDurSec(String(brush.duration ?? 120));
                 setBrushExtras(new Set());
                 setBrushModal({ open: true, slot, extrasOnly: true, existingId: brush.id });
               } else {
+                // No session — full log
                 setBrushDurSec('120');
                 setBrushExtras(new Set());
                 setBrushModal({ open: true, slot, extrasOnly: false });
@@ -1174,18 +1182,18 @@ export function DashboardClient({
             const renderSlot = (slot: 'am' | 'pm', brushes: typeof brushSessions) => {
               const isAm = slot === 'am';
               const done = brushes.length > 0;
-              const anyIncomplete = done && !hasExtras;
+              const incompleteBrushes = brushes.filter(b => !brushHasExtras(b));
+              const anyIncomplete = incompleteBrushes.length > 0;
+              const firstIncomplete = incompleteBrushes[0];
               const doneColor = isAm
                 ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-950/60'
                 : 'border-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-950/60';
               const pendingColor = anyIncomplete
                 ? 'border-amber-400 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-950/60'
                 : doneColor;
-              // Tapping the slot: if no sessions, open modal to add. If sessions exist, tap the first incomplete one.
-              const primaryBrush = brushes.find(() => true);
               return (
                 <div className={`rounded-xl p-4 flex flex-col items-center gap-1.5 border-2 transition-all hover:scale-[1.02] hover:shadow-md ${done ? pendingColor : 'border-dashed border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800/60'}`}>
-                  <button onClick={() => openBrushModal(slot, done ? primaryBrush : undefined)} disabled={isPending} className="flex flex-col items-center gap-1.5 disabled:opacity-50 w-full">
+                  <button onClick={() => openBrushModal(slot, anyIncomplete ? firstIncomplete : (done ? brushes[0] : undefined))} disabled={isPending} className="flex flex-col items-center gap-1.5 disabled:opacity-50 w-full">
                     {isAm
                       ? <Sun className={`w-6 h-6 ${done ? (anyIncomplete ? 'text-amber-500' : 'text-emerald-500') : 'text-neutral-300'}`} />
                       : <MoonIcon className={`w-6 h-6 ${done ? (anyIncomplete ? 'text-amber-500' : 'text-indigo-500') : 'text-neutral-300'}`} />
@@ -1194,21 +1202,40 @@ export function DashboardClient({
                       {done ? (isAm ? `Morning ✓` : `Evening ✓`) : (isAm ? 'Morning' : 'Evening')}
                     </span>
                   </button>
-                  {/* List all sessions in this slot */}
+                  {/* List all sessions in this slot with per-session status */}
                   {brushes.length > 0 && (
-                    <div className="flex flex-col gap-0.5 w-full items-center">
-                      {brushes.map((b) => (
-                        <span key={b.id} className="text-[11px] text-neutral-500">
-                          {fmtTime12(b.time)}{b.duration ? ` · ${fmtDur(b.duration)}` : ''}
-                        </span>
-                      ))}
+                    <div className="flex flex-col gap-1 w-full items-center">
+                      {brushes.map((b) => {
+                        const complete = brushHasExtras(b);
+                        return (
+                          <button
+                            key={b.id}
+                            onClick={() => openBrushModal(slot, b)}
+                            disabled={isPending}
+                            className="flex items-center gap-1.5 disabled:opacity-50"
+                          >
+                            <span className={`text-[11px] ${complete ? 'text-neutral-500' : 'text-amber-500'}`}>
+                              {complete ? '✓' : '○'} {fmtTime12(b.time)}{b.duration ? ` · ${fmtDur(b.duration)}` : ''}
+                            </span>
+                            {!complete && (
+                              <span className="text-[9px] text-amber-500 font-medium">+ details</span>
+                            )}
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
-                  {anyIncomplete && <span className="text-[10px] text-amber-500 font-medium">+ add routine details</span>}
+                  {anyIncomplete && <span className="text-[10px] text-amber-500 font-medium">{incompleteBrushes.length} session{incompleteBrushes.length > 1 ? 's' : ''} need routine details</span>}
                   {done && !anyIncomplete && <span className="text-[10px] text-neutral-400">tap to remove</span>}
                 </div>
               );
             };
+
+            // Global extras for the strip at the bottom
+            const hasMouthwash = localDental.some(l => l.activity === 'mouthwash');
+            const hasFloss = localDental.some(l => l.activity === 'floss_pick');
+            const hasWaterFlosser = localDental.some(l => l.activity === 'water_flosser');
+            const hasAnyExtras = hasMouthwash || hasFloss || hasWaterFlosser || localDental.some(l => l.notes?.includes('bleeding'));
 
             return (
               <Card>
@@ -1224,7 +1251,7 @@ export function DashboardClient({
                     {renderSlot('pm', pmBrushes)}
                   </div>
                   {/* Extras strip */}
-                  {hasExtras && (
+                  {hasAnyExtras && (
                     <div className="flex flex-wrap gap-1.5 pt-1">
                       {hasMouthwash && <span className="text-[11px] bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 rounded-full px-2 py-0.5">💧 Mouthwash</span>}
                       {hasFloss && <span className="text-[11px] bg-violet-50 dark:bg-violet-950/40 text-violet-600 dark:text-violet-400 rounded-full px-2 py-0.5">🧵 Floss</span>}
