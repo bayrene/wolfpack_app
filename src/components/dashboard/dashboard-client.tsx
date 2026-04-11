@@ -28,8 +28,9 @@ import { formatCurrency } from '@/lib/utils';
 import { MEAL_TYPE_LABELS, STEPS_TARGET, WATER_TARGET, COFFEE_LIMIT, CAFFEINE_PER_CUP, USER_PROFILE } from '@/lib/constants';
 import { upsertSteps, upsertWater, upsertCoffee } from '@/db/queries/daily-log';
 import { toast } from 'sonner';
-import type { Recipe, SleepLog, DailyLog, OuraDaily, Supplement, SupplementLogEntry } from '@/db/schema';
+import type { Recipe, SleepLog, DailyLog, OuraDaily, Supplement, SupplementLogEntry, DentalLogEntry } from '@/db/schema';
 import { logSupplement, deleteSupplementLog } from '@/db/queries/supplements';
+import { addDentalLog, removeDentalLog } from '@/db/queries/dental';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
@@ -117,6 +118,7 @@ interface Props {
   sleepToday?: SleepLog | null;
   ouraHistory?: OuraDaily[];
   sleepHistory?: SleepLog[];
+  dentalToday?: DentalLogEntry[];
   todayMeals: Array<{
     id: number;
     date: string;
@@ -146,10 +148,10 @@ const MICRO_BAR_CONFIG = [
   { key: 'potassium' as const, label: 'Potassium', color: '#06B6D4', unit: 'mg' },
 ];
 
-const CARD_IDS = ['oura', 'quick-log', 'nutrition', 'steps', 'water', 'coffee', 'supplements', 'meals'] as const;
+const CARD_IDS = ['oura', 'quick-log', 'nutrition', 'steps', 'water', 'coffee', 'supplements', 'teeth', 'meals'] as const;
 type CardId = typeof CARD_IDS[number];
 const DEFAULT_ORDER: CardId[] = [...CARD_IDS];
-const STORAGE_KEY = 'dashboard-card-order-v8';
+const STORAGE_KEY = 'dashboard-card-order-v9';
 
 function ReorderableCard({ children, id, index, total, onMoveUp, onMoveDown }: {
   children: React.ReactNode;
@@ -285,6 +287,7 @@ export function DashboardClient({
   sleepToday = null,
   ouraHistory = [],
   sleepHistory = [],
+  dentalToday = [],
 }: Props) {
   const router = useRouter();
   const dateInputRef = useRef<HTMLInputElement>(null);
@@ -1215,6 +1218,82 @@ export function DashboardClient({
           'nutrition': () => (
             <NutritionCard title="Today's Nutrition" data={myNutrition} targets={targets} microTargets={microTargets} />
           ),
+          'teeth': () => {
+            // Brushing sessions for today — sorted by time
+            const brushSessions = dentalToday
+              .filter(l => l.activity === 'brush')
+              .sort((a, b) => a.time.localeCompare(b.time));
+            const amBrush = brushSessions.find(l => l.time < '12:00');
+            const pmBrush = brushSessions.find(l => l.time >= '12:00');
+            const fmtDur = (sec: number | null | undefined) => {
+              if (!sec) return '';
+              const m = Math.floor(sec / 60);
+              const s = sec % 60;
+              return m > 0 ? `${m}m ${s}s` : `${s}s`;
+            };
+            const handleBrush = async (slot: 'am' | 'pm', existingId?: number) => {
+              if (existingId) {
+                startTransition(async () => {
+                  await removeDentalLog(existingId);
+                  toast.success('Brushing removed');
+                });
+              } else {
+                const now = new Date();
+                const time = now.toTimeString().substring(0, 5);
+                startTransition(async () => {
+                  await addDentalLog({ date: selectedDate, time, activity: 'brush' });
+                  toast.success(`${slot === 'am' ? 'Morning' : 'Evening'} brush logged`);
+                });
+              }
+            };
+            return (
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    🦷 Teeth Brushing
+                    <span className="text-xs font-normal text-neutral-400 ml-auto">Auto-syncs via Apple Health</span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* AM */}
+                    <button
+                      onClick={() => handleBrush('am', amBrush?.id)}
+                      className={`rounded-xl p-4 flex flex-col items-center gap-2 border-2 transition-all ${amBrush ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-950/40' : 'border-dashed border-neutral-200 dark:border-neutral-700'}`}
+                    >
+                      <Sun className={`w-6 h-6 ${amBrush ? 'text-emerald-500' : 'text-neutral-300'}`} />
+                      <span className={`text-sm font-semibold ${amBrush ? 'text-emerald-600 dark:text-emerald-400' : 'text-neutral-400'}`}>
+                        {amBrush ? 'Morning ✓' : 'Morning'}
+                      </span>
+                      {amBrush && (
+                        <span className="text-[11px] text-neutral-500">
+                          {amBrush.time}{amBrush.duration ? ` · ${fmtDur(amBrush.duration)}` : ''}
+                        </span>
+                      )}
+                    </button>
+                    {/* PM */}
+                    <button
+                      onClick={() => handleBrush('pm', pmBrush?.id)}
+                      className={`rounded-xl p-4 flex flex-col items-center gap-2 border-2 transition-all ${pmBrush ? 'border-indigo-400 bg-indigo-50 dark:bg-indigo-950/40' : 'border-dashed border-neutral-200 dark:border-neutral-700'}`}
+                    >
+                      <MoonIcon className={`w-6 h-6 ${pmBrush ? 'text-indigo-500' : 'text-neutral-300'}`} />
+                      <span className={`text-sm font-semibold ${pmBrush ? 'text-indigo-600 dark:text-indigo-400' : 'text-neutral-400'}`}>
+                        {pmBrush ? 'Evening ✓' : 'Evening'}
+                      </span>
+                      {pmBrush && (
+                        <span className="text-[11px] text-neutral-500">
+                          {pmBrush.time}{pmBrush.duration ? ` · ${fmtDur(pmBrush.duration)}` : ''}
+                        </span>
+                      )}
+                    </button>
+                  </div>
+                  {brushSessions.length === 0 && (
+                    <p className="text-xs text-center text-neutral-400 mt-3">No brushing logged yet — tap to add manually, or sync from Apple Health</p>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          },
           'meals': () => (
             todayMeals.length > 0 ? (
               <Card>

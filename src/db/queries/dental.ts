@@ -48,6 +48,13 @@ export async function deleteDentalProduct(id: number) {
 
 // --- Daily Log ---
 
+export async function getDentalLogsForDate(date: string) {
+  return db.select().from(dentalLog)
+    .where(eq(dentalLog.date, date))
+    .orderBy(desc(dentalLog.time))
+    .all();
+}
+
 export async function getDentalLogs(startDate: string, endDate: string) {
   return db
     .select()
@@ -71,6 +78,13 @@ export async function addDentalLog(data: {
 }) {
   await db.insert(dentalLog).values(data).run();
   revalidatePath('/teeth');
+  revalidatePath('/');
+}
+
+export async function removeDentalLog(id: number) {
+  await db.delete(dentalLog).where(eq(dentalLog.id, id)).run();
+  revalidatePath('/teeth');
+  revalidatePath('/');
 }
 
 export async function deleteDentalLog(id: number) {

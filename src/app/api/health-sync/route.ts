@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/db';
-import { dailyLog } from '@/db/schema';
+import { dailyLog, dentalLog } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 
@@ -151,6 +151,33 @@ export async function POST(req: Request) {
         const date = parseDate(dp.date);
         updates[date] = updates[date] ?? {};
         updates[date].workoutMinutes = (updates[date].workoutMinutes ?? 0) + Math.round(getValue(dp));
+      }
+    }
+
+    // Toothbrushing — Oral-B smart brush syncs to Apple Health as "Toothbrushing Events"
+    if (
+      nameLower === 'toothbrushingevents' || nameLower === 'toothbrushing_events' ||
+      nameLower === 'toothbrushing' || nameLower === 'toothbrushing_duration' ||
+      nameLower === 'oral_hygiene' || nameLower === 'oralhygiene'
+    ) {
+      for (const dp of metric.data) {
+        const date = parseDate(dp.date);
+        // Time portion: "2026-04-11 08:30:00 -0700" → "08:30"
+        const timePart = dp.date.length >= 16 ? dp.date.substring(11, 16) : '00:00';
+        const durationSec = getValue(dp); // Apple Health stores duration in seconds
+        // Avoid duplicate inserts: check if we already have this session (same date + time)
+        const existing = await db.select().from(dentalLog)
+          .where(and(eq(dentalLog.date, date), eq(dentalLog.time, timePart), eq(dentalLog.activity, 'brush')))
+          .get();
+        if (!existing) {
+          await db.insert(dentalLog).values({
+            date,
+            time: timePart,
+            activity: 'brush',
+            duration: durationSec > 0 ? Math.round(durationSec) : undefined,
+          }).run();
+          console.log(`[health-sync] brush session saved: ${date} ${timePart} duration=${durationSec}s`);
+        }
       }
     }
   }
