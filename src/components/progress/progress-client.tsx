@@ -400,6 +400,57 @@ export function ProgressClient({
         </CardContent>
       </Card>
 
+      {/* Supplement Adherence */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Pill className="w-4 h-4 text-[#7C3AED]" />
+            Supplement Adherence
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {suppAdherence.length === 0 ? (
+            <p className="text-sm text-neutral-500">No active supplements tracked.</p>
+          ) : (
+            <div className="space-y-4">
+              {suppAdherence.map((supp) => (
+                <div key={supp.id} className="p-3 rounded-lg border border-neutral-200 dark:border-neutral-700">
+                  <div className="flex items-center justify-between mb-1">
+                    <div>
+                      <p className="text-sm font-medium">{supp.name}</p>
+                      <p className="text-xs text-neutral-500">{supp.brand}</p>
+                    </div>
+                    <span className="text-sm font-semibold text-[#7C3AED]">
+                      {supp.daysTaken}/{supp.totalDays} days
+                    </span>
+                  </div>
+                  <Progress value={supp.adherencePercent} indicatorClassName="bg-[#7C3AED]" className="my-2" />
+                  {supp.avgRating > 0 && (
+                    <div className="flex items-center gap-1 mt-2">
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <Star
+                          key={star}
+                          className={`w-3.5 h-3.5 ${star <= Math.round(supp.avgRating) ? 'text-yellow-400 fill-yellow-400' : 'text-neutral-300 dark:text-neutral-600'}`}
+                        />
+                      ))}
+                      <span className="text-xs text-neutral-500 ml-1">{supp.avgRating}</span>
+                    </div>
+                  )}
+                  {supp.sideEffects.length > 0 && (
+                    <div className="mt-2">
+                      <p className="text-xs text-neutral-500">Side effects:</p>
+                      {supp.sideEffects.map((se, i) => (
+                        <p key={i} className="text-xs text-red-500">- {se}</p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Steps Trend */}
       <Card>
         <CardHeader>
@@ -905,56 +956,6 @@ export function ProgressClient({
         </Card>
       </div>
 
-      {/* Supplement Adherence */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Pill className="w-4 h-4 text-[#7C3AED]" />
-            Supplement Adherence
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {suppAdherence.length === 0 ? (
-            <p className="text-sm text-neutral-500">No active supplements tracked.</p>
-          ) : (
-            <div className="space-y-4">
-              {suppAdherence.map((supp) => (
-                <div key={supp.id} className="p-3 rounded-lg border border-neutral-200 dark:border-neutral-700">
-                  <div className="flex items-center justify-between mb-1">
-                    <div>
-                      <p className="text-sm font-medium">{supp.name}</p>
-                      <p className="text-xs text-neutral-500">{supp.brand}</p>
-                    </div>
-                    <span className="text-sm font-semibold text-[#7C3AED]">
-                      {supp.daysTaken}/{supp.totalDays} days
-                    </span>
-                  </div>
-                  <Progress value={supp.adherencePercent} indicatorClassName="bg-[#7C3AED]" className="my-2" />
-                  {supp.avgRating > 0 && (
-                    <div className="flex items-center gap-1 mt-2">
-                      {[1, 2, 3, 4, 5].map((star) => (
-                        <Star
-                          key={star}
-                          className={`w-3.5 h-3.5 ${star <= Math.round(supp.avgRating) ? 'text-yellow-400 fill-yellow-400' : 'text-neutral-300 dark:text-neutral-600'}`}
-                        />
-                      ))}
-                      <span className="text-xs text-neutral-500 ml-1">{supp.avgRating}</span>
-                    </div>
-                  )}
-                  {supp.sideEffects.length > 0 && (
-                    <div className="mt-2">
-                      <p className="text-xs text-neutral-500">Side effects:</p>
-                      {supp.sideEffects.map((se, i) => (
-                        <p key={i} className="text-xs text-red-500">- {se}</p>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
     </div>
   );
 }
