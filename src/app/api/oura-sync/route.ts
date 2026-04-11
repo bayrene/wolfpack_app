@@ -16,6 +16,10 @@ async function ouraFetch(path: string, token: string) {
   return res.json();
 }
 
+export async function GET() {
+  return POST();
+}
+
 export async function POST() {
   const token = process.env.OURA_TOKEN;
   if (!token) return NextResponse.json({ error: 'OURA_TOKEN not set' }, { status: 500 });
