@@ -53,6 +53,8 @@ export async function POST() {
   const mainSleeps = mainSleepsRaw.length > 0 ? mainSleepsRaw : allSleeps;
 
   let upserted = 0;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const debugSleepDays: Record<string, any> = {};
   for (const s of mainSleeps) {
     const day: string = s.day as string;
     const daily = dailyMap[day];
@@ -106,31 +108,77 @@ export async function POST() {
       .all();
     const existing = allForDay.find(r => r.source === 'oura');
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const updateObj: Record<string, any> = {};
+    if (data.bedtime !== undefined) updateObj.bedtime = data.bedtime;
+    if (data.wakeTime !== undefined) updateObj.wakeTime = data.wakeTime;
+    if (data.totalSleep !== undefined) updateObj.totalSleep = data.totalSleep;
+    if (data.score !== undefined) updateObj.score = data.score;
+    if (data.efficiency !== undefined) updateObj.efficiency = data.efficiency;
+    if (data.latency !== undefined) updateObj.latency = data.latency;
+    if (data.remSleep !== undefined) updateObj.remSleep = data.remSleep;
+    if (data.deepSleep !== undefined) updateObj.deepSleep = data.deepSleep;
+    if (data.lightSleep !== undefined) updateObj.lightSleep = data.lightSleep;
+    if (data.awakeDuration !== undefined) updateObj.awakeDuration = data.awakeDuration;
+    if (data.restfulness !== undefined) updateObj.restfulness = data.restfulness;
+    if (data.hrv !== undefined) updateObj.hrv = data.hrv;
+    if (data.restingHeartRate !== undefined) updateObj.restingHeartRate = data.restingHeartRate;
+    if (data.tempDeviation !== undefined) updateObj.tempDeviation = data.tempDeviation;
+    if (data.respiratoryRate !== undefined) updateObj.respiratoryRate = data.respiratoryRate;
+    if (data.sleepPhases !== undefined) updateObj.sleepPhases = data.sleepPhases;
+    if (data.awakenCount !== undefined) updateObj.awakenCount = data.awakenCount;
+    updateObj.source = 'oura';
+
     if (existing) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const updateObj: Record<string, any> = {};
-      if (data.bedtime !== undefined) updateObj.bedtime = data.bedtime;
-      if (data.wakeTime !== undefined) updateObj.wakeTime = data.wakeTime;
-      if (data.totalSleep !== undefined) updateObj.totalSleep = data.totalSleep;
-      if (data.score !== undefined) updateObj.score = data.score;
-      if (data.efficiency !== undefined) updateObj.efficiency = data.efficiency;
-      if (data.latency !== undefined) updateObj.latency = data.latency;
-      if (data.remSleep !== undefined) updateObj.remSleep = data.remSleep;
-      if (data.deepSleep !== undefined) updateObj.deepSleep = data.deepSleep;
-      if (data.lightSleep !== undefined) updateObj.lightSleep = data.lightSleep;
-      if (data.awakeDuration !== undefined) updateObj.awakeDuration = data.awakeDuration;
-      if (data.restfulness !== undefined) updateObj.restfulness = data.restfulness;
-      if (data.hrv !== undefined) updateObj.hrv = data.hrv;
-      if (data.restingHeartRate !== undefined) updateObj.restingHeartRate = data.restingHeartRate;
-      if (data.tempDeviation !== undefined) updateObj.tempDeviation = data.tempDeviation;
-      if (data.respiratoryRate !== undefined) updateObj.respiratoryRate = data.respiratoryRate;
-      if (data.sleepPhases !== undefined) updateObj.sleepPhases = data.sleepPhases;
-      if (data.awakenCount !== undefined) updateObj.awakenCount = data.awakenCount;
-      updateObj.source = 'oura';
       await db.update(sleepLog).set(updateObj).where(eq(sleepLog.id, existing.id)).run();
     } else {
       await db.insert(sleepLog).values(data).run();
     }
+
+    // Debug: capture what we're writing for recent days
+    const today = format(new Date(), 'yyyy-MM-dd');
+    const weekAgo = format(subDays(new Date(), 7), 'yyyy-MM-dd');
+    if (day >= weekAgo && day <= today) {
+      // Read back the row to confirm it was written
+      const verifyRow = await db.select().from(sleepLog).where(eq(sleepLog.date, day)).all();
+      const ouraRow = verifyRow.find(r => r.source === 'oura');
+      debugSleepDays[day] = {
+        action: existing ? 'update' : 'insert',
+        existingId: existing?.id,
+        rawApiFields: {
+          total_sleep_duration: s.total_sleep_duration,
+          deep_sleep_duration: s.deep_sleep_duration,
+          rem_sleep_duration: s.rem_sleep_duration,
+          light_sleep_duration: s.light_sleep_duration,
+          efficiency: s.efficiency,
+          average_hrv: s.average_hrv,
+          lowest_heart_rate: s.lowest_heart_rate,
+          bedtime_start: s.bedtime_start,
+          bedtime_end: s.bedtime_end,
+          type: s.type,
+        },
+        parsedData: {
+          totalSleep, bedtime, wakeTime,
+          efficiency: data.efficiency, hrv: data.hrv,
+          restingHeartRate: data.restingHeartRate,
+          deepSleep: data.deepSleep, remSleep: data.remSleep,
+          lightSleep: data.lightSleep,
+        },
+        updateObjKeys: Object.keys(updateObj),
+        dbAfterWrite: ouraRow ? {
+          totalSleep: ouraRow.totalSleep,
+          bedtime: ouraRow.bedtime,
+          wakeTime: ouraRow.wakeTime,
+          efficiency: ouraRow.efficiency,
+          hrv: ouraRow.hrv,
+          restingHeartRate: ouraRow.restingHeartRate,
+          deepSleep: ouraRow.deepSleep,
+          remSleep: ouraRow.remSleep,
+          score: ouraRow.score,
+        } : 'NOT_FOUND',
+      };
+    }
+
     upserted++;
   }
 
@@ -227,5 +275,8 @@ export async function POST() {
     activityUpserted,
     start,
     end,
+    debugSleepDays,
+    mainSleepCount: mainSleeps.length,
+    allSleepCount: allSleeps.length,
   });
 }
