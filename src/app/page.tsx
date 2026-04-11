@@ -224,9 +224,37 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       activeSupplements={activeSupplements}
       stepsHistory={stepsHistory}
       userSettings={{ name: settings.name ?? 'Rene', dob: settings.dob ?? '1993-03-14', heightIn: settings.heightIn ?? 69, weightLbs: settings.weightLbs ?? 150 }}
-      todayMeals={todayMeals.map(({ meal, recipe }) => ({
-        ...meal,
-        recipeName: recipe?.name ?? meal.customName ?? 'Unknown',
+      todayMeals={await Promise.all(todayMeals.map(async ({ meal, recipe }) => {
+        let cal = 0, pro = 0, car = 0, f = 0;
+        if (meal.customCalories != null) {
+          const sv = meal.servingsConsumed ?? 1;
+          cal = Math.round(meal.customCalories * sv);
+          pro = Math.round((meal.customProtein ?? 0) * sv);
+          car = Math.round((meal.customCarbs ?? 0) * sv);
+          f = Math.round((meal.customFat ?? 0) * sv);
+        } else if (recipe) {
+          const rd = await getRecipeById(recipe.id);
+          if (rd) {
+            let tc = 0, tp = 0, tca = 0, tf = 0;
+            for (const ri of rd.ingredients) {
+              tc += ri.ingredient.caloriesPerUnit * ri.amount;
+              tp += ri.ingredient.proteinPerUnit * ri.amount;
+              tca += ri.ingredient.carbsPerUnit * ri.amount;
+              tf += ri.ingredient.fatPerUnit * ri.amount;
+            }
+            const rs = recipe.servings ?? 1;
+            const sv = meal.servingsConsumed ?? 1;
+            cal = Math.round((tc / rs) * sv);
+            pro = Math.round((tp / rs) * sv);
+            car = Math.round((tca / rs) * sv);
+            f = Math.round((tf / rs) * sv);
+          }
+        }
+        return {
+          ...meal,
+          recipeName: recipe?.name ?? meal.customName ?? 'Unknown',
+          calories: cal, protein: pro, carbs: car, fat: f,
+        };
       }))}
       ouraToday={ouraToday}
       sleepToday={sleepToday}

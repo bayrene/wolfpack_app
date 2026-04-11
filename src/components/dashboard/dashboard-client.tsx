@@ -126,6 +126,10 @@ interface Props {
     person: string;
     recipeName: string;
     servingsConsumed: number | null;
+    calories: number;
+    protein: number;
+    carbs: number;
+    fat: number;
   }>;
 }
 
@@ -257,6 +261,76 @@ function NutritionCard({ title, data, targets, microTargets }: { title: string; 
             )}
           </div>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+interface MealWithNutrition {
+  id: number;
+  mealType: string;
+  recipeName: string;
+  servingsConsumed: number | null;
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+}
+
+function MealsCard({ meals }: { meals: MealWithNutrition[] }) {
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Today&apos;s Meals</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-1">
+          {meals.map((meal) => {
+            const isOpen = expandedId === meal.id;
+            return (
+              <div key={meal.id}>
+                <button
+                  type="button"
+                  onClick={() => setExpandedId(isOpen ? null : meal.id)}
+                  className="w-full flex items-center justify-between py-2 border-b border-neutral-100 dark:border-neutral-800 last:border-0 text-left hover:bg-neutral-50 dark:hover:bg-neutral-800/50 rounded-lg px-2 -mx-2 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <Badge variant={meal.mealType as 'breakfast' | 'lunch' | 'dinner' | 'snack'}>
+                      {MEAL_TYPE_LABELS[meal.mealType]}
+                    </Badge>
+                    <span className="text-sm font-medium">{meal.recipeName}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-neutral-500">{meal.calories} cal</span>
+                    {isOpen ? <ChevronUp className="w-3.5 h-3.5 text-neutral-400" /> : <ChevronDown className="w-3.5 h-3.5 text-neutral-400" />}
+                  </div>
+                </button>
+                {isOpen && (
+                  <div className="grid grid-cols-4 gap-3 px-2 py-3 bg-neutral-50 dark:bg-neutral-800/50 rounded-lg mb-1">
+                    <div className="text-center">
+                      <p className="text-xs text-neutral-500">Calories</p>
+                      <p className="text-sm font-semibold text-[#E07A3A]">{meal.calories}</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xs text-neutral-500">Protein</p>
+                      <p className="text-sm font-semibold text-[#3A8A5C]">{meal.protein}g</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xs text-neutral-500">Carbs</p>
+                      <p className="text-sm font-semibold text-[#2A9D8F]">{meal.carbs}g</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xs text-neutral-500">Fat</p>
+                      <p className="text-sm font-semibold text-[#7C3AED]">{meal.fat}g</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </CardContent>
     </Card>
   );
@@ -1275,26 +1349,7 @@ export function DashboardClient({
           },
           'meals': () => (
             todayMeals.length > 0 ? (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Today&apos;s Meals</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    {todayMeals.map((meal) => (
-                      <div key={meal.id} className="flex items-center justify-between py-2 border-b border-neutral-100 dark:border-neutral-800 last:border-0">
-                        <div className="flex items-center gap-3">
-                          <Badge variant={meal.mealType as 'breakfast' | 'lunch' | 'dinner' | 'snack'}>
-                            {MEAL_TYPE_LABELS[meal.mealType]}
-                          </Badge>
-                          <span className="text-sm font-medium">{meal.recipeName}</span>
-                        </div>
-                        <span className="text-xs text-neutral-500">{meal.servingsConsumed ? `${meal.servingsConsumed} serving${meal.servingsConsumed > 1 ? 's' : ''}` : ''}</span>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
+              <MealsCard meals={todayMeals} />
             ) : null
           ),
         };
