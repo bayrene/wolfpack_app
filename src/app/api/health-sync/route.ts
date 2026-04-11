@@ -88,9 +88,10 @@ export async function POST(req: Request) {
       for (const dp of metric.data) {
         const date = parseDate(dp.date);
         updates[date] = updates[date] ?? {};
-        // Apple Health sends weight in kg, convert to lbs
         const val = getValue(dp);
-        updates[date].weightLbs = Math.round(val * 2.20462 * 10) / 10;
+        // Convert kg→lbs only if units say kg; Imperial Health setups send lbs directly
+        const isKg = metric.units?.toLowerCase().includes('kg') || metric.units?.toLowerCase() === 'g';
+        updates[date].weightLbs = isKg ? Math.round(val * 2.20462 * 10) / 10 : Math.round(val * 10) / 10;
       }
     }
 
