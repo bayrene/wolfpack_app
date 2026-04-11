@@ -1,10 +1,11 @@
-import { getMealsForDateRange, getWeeklySpending } from '@/db/queries/meals';
+import { getMealsForDateRange } from '@/db/queries/meals';
 import { getRecipeById } from '@/db/queries/recipes';
 import { getDailyLogsForRange } from '@/db/queries/daily-log';
 import { getSupplementLogsForRange, getActiveSupplements } from '@/db/queries/supplements';
+import { getSleepHistory } from '@/db/queries/oura';
 import { ProgressClient } from '@/components/progress/progress-client';
 import { todayISO } from '@/lib/utils';
-import { DEFAULT_TARGETS, MICRO_TARGETS, FAST_FOOD_WEEKLY_BASELINE, STEPS_TARGET } from '@/lib/constants';
+import { DEFAULT_TARGETS, MICRO_TARGETS, STEPS_TARGET } from '@/lib/constants';
 import { format, parseISO, startOfWeek, endOfWeek, startOfMonth, endOfMonth, differenceInDays } from 'date-fns';
 
 export const dynamic = 'force-dynamic';
@@ -134,22 +135,23 @@ export default async function ProgressPage({ searchParams }: { searchParams: Pro
   const clampedEnd = periodEnd > today ? today : periodEnd;
   const totalDays = differenceInDays(parseISO(clampedEnd), parseISO(periodStart)) + 1;
 
-  // Also compute spending for the current actual week (for the spending card)
-  const currentWeekStart = format(startOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd');
-  const currentWeekEnd = format(endOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd');
+  // Weight history: 365 days for the weight trend card
+  const oneYearAgo = format(new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd');
 
   const [
     nutritionDaily,
     stepsDaily,
     suppLogs,
-    weeklySpend,
     activeSupplements,
+    weightHistory,
+    sleepHistory,
   ] = await Promise.all([
     computeDailyNutrition(periodStart, clampedEnd),
     getDailyLogsForRange(periodStart, clampedEnd, 'me'),
     getSupplementLogsForRange(periodStart, clampedEnd),
-    getWeeklySpending(currentWeekStart, currentWeekEnd),
     getActiveSupplements(),
+    getDailyLogsForRange(oneYearAgo, today, 'me'),
+    getSleepHistory(periodStart, clampedEnd),
   ]);
 
   // Compute macro averages
@@ -223,10 +225,15 @@ export default async function ProgressPage({ searchParams }: { searchParams: Pro
     .map(l => ({ date: l.date, steps: l.steps ?? 0 }))
     .sort((a, b) => a.date.localeCompare(b.date));
 
-  // Spending data
-  const spendMultiplier = view === 'month' ? 4 : 1;
-  const spend = weeklySpend * spendMultiplier;
-  const fastFood = FAST_FOOD_WEEKLY_BASELINE * spendMultiplier;
+  // Water & coffee averages
+  const waterCoffeeAvg = (() => {
+    const logs = stepsDaily.filter(l => (l.waterOz ?? 0) > 0 || (l.coffee ?? 0) > 0);
+    if (logs.length === 0) return { avgWater: 0, avgCoffee: 0 };
+    return {
+      avgWater: Math.round(logs.reduce((s, l) => s + (l.waterOz ?? 0), 0) / totalDays),
+      avgCoffee: Math.round((logs.reduce((s, l) => s + (l.coffee ?? 0), 0) / totalDays) * 10) / 10,
+    };
+  })();
 
   return (
     <ProgressClient
@@ -239,11 +246,13 @@ export default async function ProgressPage({ searchParams }: { searchParams: Pro
       stepsStats={computeStepsStats(stepsDaily)}
       stepsChart={stepsChartData}
       suppAdherence={computeSuppAdherence(suppLogs, totalDays)}
-      spend={spend}
-      fastFood={fastFood}
       targets={DEFAULT_TARGETS}
       microTargets={MICRO_TARGETS}
       stepsTarget={STEPS_TARGET}
+      weightHistory={weightHistory}
+      sleepHistory={sleepHistory}
+      avgWaterOz={waterCoffeeAvg.avgWater}
+      avgCoffeeCups={waterCoffeeAvg.avgCoffee}
     />
   );
 }

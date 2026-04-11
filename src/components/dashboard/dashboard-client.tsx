@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useTransition, useEffect, useCallback } from 'react';
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, BarChart, Bar, LineChart, Line } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, BarChart, Bar } from 'recharts';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -22,13 +22,14 @@ import {
   ChevronDown,
   Calendar,
   Droplets,
-  Scale,
+  Pill,
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { MEAL_TYPE_LABELS, STEPS_TARGET, WATER_TARGET, COFFEE_LIMIT, CAFFEINE_PER_CUP, USER_PROFILE } from '@/lib/constants';
 import { upsertSteps, upsertWater, upsertCoffee } from '@/db/queries/daily-log';
 import { toast } from 'sonner';
-import type { Recipe, SleepLog, DailyLog, OuraDaily } from '@/db/schema';
+import type { Recipe, SleepLog, DailyLog, OuraDaily, Supplement, SupplementLogEntry } from '@/db/schema';
+import { logSupplement, deleteSupplementLog } from '@/db/queries/supplements';
 import Link from 'next/link';
 
 interface NutritionData {
@@ -107,8 +108,9 @@ interface Props {
   upcomingEvents?: UpcomingEvent[];
   latestSleepLog?: SleepLog | null;
   userSettings?: UserSettings;
-  weightHistory?: DailyLog[];
-  todayWeight?: number | null;
+  todaySupplements?: Array<{ log: SupplementLogEntry; supplement: Supplement }>;
+  activeSupplements?: Supplement[];
+  stepsHistory?: DailyLog[];
   ouraToday?: OuraDaily | null;
   sleepToday?: SleepLog | null;
   ouraHistory?: OuraDaily[];
@@ -142,10 +144,10 @@ const MICRO_BAR_CONFIG = [
   { key: 'potassium' as const, label: 'Potassium', color: '#06B6D4', unit: 'mg' },
 ];
 
-const CARD_IDS = ['oura', 'quick-log', 'nutrition', 'steps', 'water', 'coffee', 'weight', 'meals'] as const;
+const CARD_IDS = ['oura', 'quick-log', 'nutrition', 'steps', 'water', 'coffee', 'supplements', 'meals'] as const;
 type CardId = typeof CARD_IDS[number];
 const DEFAULT_ORDER: CardId[] = [...CARD_IDS];
-const STORAGE_KEY = 'dashboard-card-order-v7';
+const STORAGE_KEY = 'dashboard-card-order-v8';
 
 function ReorderableCard({ children, id, index, total, onMoveUp, onMoveDown }: {
   children: React.ReactNode;
@@ -273,8 +275,9 @@ export function DashboardClient({
   upcomingEvents = [],
   latestSleepLog,
   userSettings,
-  weightHistory = [],
-  todayWeight = null,
+  todaySupplements = [],
+  activeSupplements = [],
+  stepsHistory = [],
   ouraToday = null,
   sleepToday = null,
   ouraHistory = [],
@@ -289,11 +292,13 @@ export function DashboardClient({
   const [isPending, startTransition] = useTransition();
   const [isSyncingOura, setIsSyncingOura] = useState(false);
   const [sleepHistoryRange, setSleepHistoryRange] = useState<7 | 30>(7);
-  const [weightPeriod, setWeightPeriod] = useState<'week' | 'month' | 'quarter' | 'semester' | 'year' | 'all'>('month');
-  const [weightOffset, setWeightOffset] = useState(0);
   const stepsInputRef = useRef<HTMLInputElement>(null);
   const waterInputRef = useRef<HTMLInputElement>(null);
   const [cardOrder, setCardOrder] = useState<CardId[]>(DEFAULT_ORDER);
+  // supplementIds that have been toggled on (taken today) — initialized from todaySupplements
+  const [takenSupplementIds, setTakenSupplementIds] = useState<Set<number>>(
+    () => new Set(todaySupplements.map((ts) => ts.supplement.id)),
+  );
 
   useEffect(() => {
     try {
@@ -380,6 +385,67 @@ export function DashboardClient({
     ? "Today"
     : new Date(stepsDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 
+  // Compute streaks from history (sorted newest-first from DB, we need oldest→newest for streak logic)
+  const computeStepsStreak = () => {
+    const sorted = [...stepsHistory].sort((a, b) => b.date.localeCompare(a.date));
+    let streak = 0;
+    for (const d of sorted) {
+      if ((d.steps ?? 0) >= 10000) streak++;
+      else break;
+    }
+    return streak;
+  };
+
+  const computeSuppStreak = () => {
+    // streak = consecutive days (going back from today) where ALL active supplements were taken
+    if (activeSupplements.length === 0) return 0;
+    // Build a set of dates per supplementId from todaySupplements
+    // For streak we only have todaySupplements (today's data), not historical per-day data
+    // Use stepsHistory dates to anchor days, but we don't have daily supp logs per day on the dashboard
+    // Simplest approach: streak = 1 if all taken today, else 0
+    const allTakenToday = activeSupplements.every((s) => takenSupplementIds.has(s.id));
+    return allTakenToday ? 1 : 0;
+  };
+
+  const stepsStreak = computeStepsStreak();
+  const suppStreak = computeSuppStreak();
+
+  const handleSupplementToggle = (suppId: number) => {
+    const isTaken = takenSupplementIds.has(suppId);
+    setTakenSupplementIds((prev) => {
+      const next = new Set(prev);
+      if (isTaken) next.delete(suppId);
+      else next.add(suppId);
+      return next;
+    });
+    startTransition(async () => {
+      if (isTaken) {
+        // Remove today's log entry for this supplement
+        const entry = todaySupplements.find((ts) => ts.supplement.id === suppId);
+        if (entry) {
+          await deleteSupplementLog(entry.log.id);
+        }
+        toast.success('Supplement unmarked');
+      } else {
+        // Log it
+        const supp = activeSupplements.find((s) => s.id === suppId);
+        if (supp) {
+          const now = new Date();
+          const time = now.toTimeString().slice(0, 5);
+          await logSupplement({
+            supplementId: suppId,
+            date: today,
+            time,
+            dose: supp.defaultDose,
+            person: 'me',
+            situation: 'other',
+          });
+          toast.success(`${supp.name} logged`);
+        }
+      }
+    });
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -410,6 +476,24 @@ export function DashboardClient({
           </div>
         );
       })()}
+
+      {/* Streaks Strip */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-neutral-100 dark:bg-neutral-800">
+          <span className="text-base">🔥</span>
+          <div>
+            <p className="text-sm font-bold leading-none">{stepsStreak}d</p>
+            <p className="text-[10px] text-neutral-500 mt-0.5">Steps streak</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-neutral-100 dark:bg-neutral-800">
+          <span className="text-base">💊</span>
+          <div>
+            <p className="text-sm font-bold leading-none">{suppStreak}d</p>
+            <p className="text-[10px] text-neutral-500 mt-0.5">Supplement streak</p>
+          </div>
+        </div>
+      </div>
 
       {/* Upcoming Reminders */}
       {upcomingEvents.length > 0 && (
@@ -1004,320 +1088,60 @@ export function DashboardClient({
               </CardContent>
             </Card>
           ),
-          'weight': () => {
-            // All weight points from weightHistory (90 days), sorted oldest→newest
-            const allWeightPoints = weightHistory
-              .filter((log) => log.weightLbs != null)
-              .map((log) => ({
-                date: log.date,
-                weight: log.weightLbs as number,
-              }))
-              .sort((a, b) => a.date.localeCompare(b.date));
-
-            // Compute period window [windowStart, windowEnd] as ISO date strings
-            const todayDate = new Date(today + 'T00:00:00');
-
-            const getPeriodWindow = (period: typeof weightPeriod, offset: number): { start: Date; end: Date; label: string } => {
-              const ref = new Date(todayDate);
-
-              if (period === 'all') {
-                const earliest = allWeightPoints.length > 0
-                  ? new Date(allWeightPoints[0].date + 'T00:00:00')
-                  : new Date(ref.getFullYear(), 0, 1);
-                return { start: earliest, end: ref, label: 'All time' };
-              }
-
-              if (period === 'week') {
-                // Week: Mon–Sun, offset shifts by 7 days
-                const dayOfWeek = ref.getDay(); // 0=Sun
-                const daysToMon = (dayOfWeek + 6) % 7;
-                const monThisWeek = new Date(ref);
-                monThisWeek.setDate(ref.getDate() - daysToMon);
-                monThisWeek.setHours(0, 0, 0, 0);
-                const start = new Date(monThisWeek);
-                start.setDate(start.getDate() + offset * 7);
-                const end = new Date(start);
-                end.setDate(start.getDate() + 6);
-                const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-                return { start, end, label: `${fmt(start)} – ${fmt(end).split(' ')[1]}, ${end.getFullYear()}` };
-              }
-
-              if (period === 'month') {
-                const base = new Date(ref.getFullYear(), ref.getMonth() + offset, 1);
-                const start = new Date(base.getFullYear(), base.getMonth(), 1);
-                const end = new Date(base.getFullYear(), base.getMonth() + 1, 0);
-                const label = start.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-                return { start, end, label };
-              }
-
-              if (period === 'quarter') {
-                const currentQ = Math.floor(ref.getMonth() / 3);
-                const targetQ = currentQ + offset;
-                const year = ref.getFullYear() + Math.floor(targetQ / 4);
-                const q = ((targetQ % 4) + 4) % 4;
-                const start = new Date(year, q * 3, 1);
-                const end = new Date(year, q * 3 + 3, 0);
-                const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-                return { start, end, label: `${fmt(start)} – ${fmt(end)}` };
-              }
-
-              if (period === 'semester') {
-                const currentS = ref.getMonth() < 6 ? 0 : 1;
-                const totalS = ref.getFullYear() * 2 + currentS + offset;
-                const year = Math.floor(totalS / 2);
-                const s = ((totalS % 2) + 2) % 2;
-                const start = new Date(year, s * 6, 1);
-                const end = new Date(year, s * 6 + 6, 0);
-                const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-                return { start, end, label: `${fmt(start)} – ${fmt(end)}` };
-              }
-
-              // year
-              const year = ref.getFullYear() + offset;
-              const start = new Date(year, 0, 1);
-              const end = new Date(year, 11, 31);
-              return { start, end, label: String(year) };
-            };
-
-            const { start: windowStart, end: windowEnd, label: windowLabel } = getPeriodWindow(weightPeriod, weightOffset);
-            const windowStartStr = windowStart.toISOString().split('T')[0];
-            const windowEndStr = windowEnd.toISOString().split('T')[0];
-
-            // Clamp windowEnd to today so we never show future
-            const effectiveEndStr = windowEndStr > today ? today : windowEndStr;
-
-            const periodPoints = allWeightPoints.filter(
-              (p) => p.date >= windowStartStr && p.date <= effectiveEndStr,
-            );
-
-            // Build chart data with human-readable x-axis labels
-            const chartPoints = periodPoints.map((p) => {
-              const d = new Date(p.date + 'T00:00:00');
-              let xLabel: string;
-              if (weightPeriod === 'week') {
-                xLabel = d.toLocaleDateString('en-US', { weekday: 'short' });
-              } else if (weightPeriod === 'month') {
-                xLabel = String(d.getDate());
-              } else {
-                xLabel = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-              }
-              return { date: p.date, weight: p.weight, label: xLabel };
-            });
-
-            // Compute Y domain: actual range ± 2 lbs, no zero baseline
-            const chartWeights = chartPoints.map((p) => p.weight);
-            const yMin = chartWeights.length > 0 ? Math.floor(Math.min(...chartWeights)) - 2 : 140;
-            const yMax = chartWeights.length > 0 ? Math.ceil(Math.max(...chartWeights)) + 2 : 200;
-
-            // Trend: last minus first in period
-            const periodFirst = chartPoints.length > 0 ? chartPoints[0].weight : null;
-            const periodLast = chartPoints.length > 0 ? chartPoints[chartPoints.length - 1].weight : null;
-            const trendDelta = periodFirst != null && periodLast != null ? periodLast - periodFirst : null;
-            const STABLE_THRESHOLD = 0.5;
-            const trendStatus: 'stable' | 'gaining' | 'losing' =
-              trendDelta == null || Math.abs(trendDelta) < STABLE_THRESHOLD
-                ? 'stable'
-                : trendDelta > 0 ? 'gaining' : 'losing';
-            const trendColor = trendStatus === 'losing' ? '#4ade80' : trendStatus === 'gaining' ? '#f87171' : '#9ca3af';
-            const trendArrow = trendStatus === 'losing' ? '↓' : trendStatus === 'gaining' ? '↑' : '→';
-
-            const fmtTrend = (n: number | null) => {
-              if (n == null) return '—';
-              const sign = n > 0 ? '+' : '';
-              return `${sign}${n.toFixed(1)} lb`;
-            };
-
-            // Latest weight to display large
-            const lastRecorded = allWeightPoints.length > 0 ? allWeightPoints[allWeightPoints.length - 1] : null;
-            const displayWeight = todayWeight ?? lastRecorded?.weight ?? null;
-            const isLastRecorded = todayWeight == null && lastRecorded != null;
-
-            const PERIOD_TABS: Array<{ id: typeof weightPeriod; label: string }> = [
-              { id: 'week', label: 'Week' },
-              { id: 'month', label: 'Month' },
-              { id: 'quarter', label: 'Quarter' },
-              { id: 'semester', label: 'Semester' },
-              { id: 'year', label: 'Year' },
-              { id: 'all', label: 'All' },
-            ];
-
-            // Can we go forward? Only if window end is before today
-            const canGoForward = weightPeriod !== 'all' && windowEndStr < today;
-            // Can we go back? Only if there's any data before the window start
-            const canGoBack = weightPeriod !== 'all' && allWeightPoints.some((p) => p.date < windowStartStr);
-
-            // Build x-axis tick config: thin out ticks if too many points
-            const maxTicks = weightPeriod === 'week' ? 7 : weightPeriod === 'month' ? 10 : 8;
-            const tickStep = chartPoints.length > maxTicks ? Math.ceil(chartPoints.length / maxTicks) : 1;
-            const visibleTicks = new Set<number>();
-            chartPoints.forEach((_, i) => {
-              if (i === 0 || i === chartPoints.length - 1 || i % tickStep === 0) visibleTicks.add(i);
-            });
-
-            return (
-              <Card className="border-neutral-800 bg-neutral-950 col-span-full">
-                <CardContent className="py-5 px-5">
-
-                  {/* Current weight display */}
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <Scale className="w-5 h-5 text-[#818cf8]" />
-                      <p className="text-base font-semibold text-white">Weight</p>
-                    </div>
-                    <div className="text-right">
-                      {displayWeight != null ? (
-                        <>
-                          <p className="text-4xl font-bold text-white leading-none">
-                            {displayWeight.toFixed(1)}
-                            <span className="text-lg font-medium text-neutral-400 ml-1">lbs</span>
-                          </p>
-                          {isLastRecorded && lastRecorded && (
-                            <p className="text-[10px] text-neutral-500 mt-0.5">
-                              Last recorded · {new Date(lastRecorded.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+          'supplements': () => (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Pill className="w-4 h-4 text-[#7C3AED]" />
+                  Supplements
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {activeSupplements.length === 0 ? (
+                  <p className="text-sm text-neutral-500">No supplements configured</p>
+                ) : (
+                  <div className="space-y-2">
+                    {activeSupplements.map((supp) => {
+                      const taken = takenSupplementIds.has(supp.id);
+                      return (
+                        <button
+                          key={supp.id}
+                          type="button"
+                          onClick={() => handleSupplementToggle(supp.id)}
+                          disabled={isPending}
+                          className={`w-full flex items-center gap-3 py-2.5 px-3 rounded-xl border transition-colors text-left ${
+                            taken
+                              ? 'border-[#7C3AED]/30 bg-[#7C3AED]/5 opacity-60'
+                              : 'border-neutral-200 dark:border-neutral-700 hover:border-[#7C3AED]/40 hover:bg-[#7C3AED]/5'
+                          }`}
+                        >
+                          <div className={`w-5 h-5 rounded-full flex-shrink-0 border-2 flex items-center justify-center transition-colors ${
+                            taken
+                              ? 'bg-[#7C3AED] border-[#7C3AED]'
+                              : 'border-neutral-300 dark:border-neutral-600'
+                          }`}>
+                            {taken && (
+                              <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                              </svg>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-sm font-medium truncate ${taken ? 'line-through text-neutral-400' : ''}`}>
+                              {supp.name}
                             </p>
-                          )}
-                        </>
-                      ) : (
-                        <p className="text-sm text-neutral-400">No data</p>
-                      )}
-                    </div>
+                            <p className="text-xs text-neutral-500 truncate">
+                              {supp.defaultDose} {supp.doseUnit}
+                            </p>
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
-
-                  {/* Period tabs */}
-                  <div className="flex items-center gap-1 mb-4 flex-wrap">
-                    {PERIOD_TABS.map((tab) => (
-                      <button
-                        key={tab.id}
-                        onClick={() => { setWeightPeriod(tab.id); setWeightOffset(0); }}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                          weightPeriod === tab.id
-                            ? 'bg-neutral-700 text-white'
-                            : 'text-neutral-400 hover:text-neutral-200'
-                        }`}
-                      >
-                        {tab.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Navigation row */}
-                  {weightPeriod !== 'all' && (
-                    <div className="flex items-center justify-between mb-3">
-                      <button
-                        onClick={() => canGoBack && setWeightOffset((o) => o - 1)}
-                        disabled={!canGoBack}
-                        className="p-1 rounded-md text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                        aria-label="Previous period"
-                      >
-                        <ChevronLeft className="w-4 h-4" />
-                      </button>
-                      <span className="text-xs font-medium text-neutral-300">{windowLabel}</span>
-                      <button
-                        onClick={() => canGoForward && setWeightOffset((o) => o + 1)}
-                        disabled={!canGoForward}
-                        className="p-1 rounded-md text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                        aria-label="Next period"
-                      >
-                        <ChevronRight className="w-4 h-4" />
-                      </button>
-                    </div>
-                  )}
-                  {weightPeriod === 'all' && (
-                    <div className="flex items-center justify-center mb-3">
-                      <span className="text-xs font-medium text-neutral-300">{windowLabel}</span>
-                    </div>
-                  )}
-
-                  {/* Status row: WEIGHT status + TREND */}
-                  <div className="flex items-center justify-between mb-4 px-1">
-                    <div>
-                      <p className="text-[10px] uppercase tracking-widest text-neutral-500 mb-0.5">Weight</p>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-base font-bold" style={{ color: trendColor }}>{trendArrow}</span>
-                        <span className="text-sm font-semibold text-white capitalize">{trendStatus}</span>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-[10px] uppercase tracking-widest text-neutral-500 mb-0.5">Trend</p>
-                      <p className="text-sm font-semibold" style={{ color: trendColor }}>{fmtTrend(trendDelta)}</p>
-                    </div>
-                  </div>
-
-                  {/* Chart */}
-                  {chartPoints.length > 1 ? (
-                    <div style={{ height: 220 }}>
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={chartPoints} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
-                          <CartesianGrid
-                            strokeDasharray="4 4"
-                            stroke="rgba(255,255,255,0.06)"
-                            vertical={true}
-                            horizontal={false}
-                          />
-                          <XAxis
-                            dataKey="label"
-                            tick={{ fontSize: 10, fill: '#6b7280' }}
-                            tickLine={false}
-                            axisLine={false}
-                            tickFormatter={(_value, index) => visibleTicks.has(index) ? _value : ''}
-                            interval={0}
-                          />
-                          <YAxis
-                            domain={[yMin, yMax]}
-                            tick={{ fontSize: 10, fill: '#6b7280' }}
-                            tickLine={false}
-                            axisLine={false}
-                            width={36}
-                            tickFormatter={(v: number) => `${v}`}
-                          />
-                          <Tooltip
-                            contentStyle={{
-                              backgroundColor: '#1c1c1e',
-                              border: '1px solid rgba(255,255,255,0.1)',
-                              borderRadius: 8,
-                              fontSize: 12,
-                              color: '#f5f5f5',
-                            }}
-                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                            formatter={(value: any) => [typeof value === 'number' ? `${value.toFixed(1)} lbs` : `${value} lbs`, 'Weight']}
-                            labelFormatter={(label, payload) => {
-                              if (payload && payload.length > 0) {
-                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                const item = payload[0] as any;
-                                if (item?.payload?.date) {
-                                  return new Date(item.payload.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-                                }
-                              }
-                              return label;
-                            }}
-                            labelStyle={{ color: '#9ca3af', marginBottom: 2 }}
-                          />
-                          <Line
-                            type="monotone"
-                            dataKey="weight"
-                            stroke="#818cf8"
-                            strokeWidth={2}
-                            strokeDasharray="5 3"
-                            dot={{ r: 3, fill: '#818cf8', strokeWidth: 0 }}
-                            activeDot={{ r: 5, fill: '#818cf8', strokeWidth: 0 }}
-                          />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  ) : chartPoints.length === 1 ? (
-                    <div className="flex items-center justify-center h-[220px]">
-                      <p className="text-sm text-neutral-400">Only one entry — log more to see the trend.</p>
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-center h-[220px]">
-                      <p className="text-sm text-neutral-400">No weight data for this period.</p>
-                    </div>
-                  )}
-
-                </CardContent>
-              </Card>
-            );
-          },
+                )}
+              </CardContent>
+            </Card>
+          ),
           'nutrition': () => (
             <NutritionCard title="Today's Nutrition" data={myNutrition} targets={targets} microTargets={microTargets} />
           ),

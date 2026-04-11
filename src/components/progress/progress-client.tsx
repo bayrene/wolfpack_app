@@ -10,7 +10,6 @@ import {
   Flame,
   Footprints,
   Pill,
-  DollarSign,
   TrendingUp,
   Star,
   ChevronLeft,
@@ -18,12 +17,16 @@ import {
   Pencil,
   Check,
   X,
+  Scale,
+  Moon as MoonIcon,
+  Droplets,
+  Coffee,
 } from 'lucide-react';
-import { formatCurrency } from '@/lib/utils';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  ComposedChart, Line, ReferenceLine, Cell,
+  ComposedChart, Line, ReferenceLine, Cell, LineChart,
 } from 'recharts';
+import type { DailyLog, SleepLog } from '@/db/schema';
 import { useRouter } from 'next/navigation';
 import {
   format, parseISO, subWeeks, addWeeks, subMonths, addMonths,
@@ -111,11 +114,13 @@ interface Props {
   stepsStats: StepsStats;
   stepsChart: StepsChartEntry[];
   suppAdherence: SuppAdherence[];
-  spend: number;
-  fastFood: number;
   targets: MacroAvg;
   microTargets: MicroTargets;
   stepsTarget: number;
+  weightHistory?: DailyLog[];
+  sleepHistory?: SleepLog[];
+  avgWaterOz?: number;
+  avgCoffeeCups?: number;
 }
 
 const MICRO_CONFIG = [
@@ -167,14 +172,19 @@ export function ProgressClient({
   stepsStats,
   stepsChart,
   suppAdherence,
-  spend, fastFood,
   targets, microTargets, stepsTarget,
+  weightHistory = [],
+  sleepHistory = [],
+  avgWaterOz = 0,
+  avgCoffeeCups = 0,
 }: Props) {
   const router = useRouter();
   const [editingStepsDate, setEditingStepsDate] = useState<string | null>(null);
   const [editingStepsValue, setEditingStepsValue] = useState('');
   const [localStepsChart, setLocalStepsChart] = useState(stepsChart);
   const [isPending, startTransition] = useTransition();
+  const [weightPeriod, setWeightPeriod] = useState<'week' | 'month' | 'quarter' | 'semester' | 'year' | 'all'>('month');
+  const [weightOffset, setWeightOffset] = useState(0);
 
   const handleStepsEdit = (date: string, currentSteps: number) => {
     setEditingStepsDate(date);
@@ -206,15 +216,9 @@ export function ProgressClient({
     ? Math.round(suppAdherence.reduce((sum, s) => sum + s.adherencePercent, 0) / suppAdherence.length)
     : 0;
 
-  const savings = fastFood - spend;
-
   const proteinStreak = computeStreak(nutritionDaily, 'protein', targets.protein);
   const stepsStreak = computeStepsStreak(stepsChart, stepsTarget);
   const suppStreak = computeSuppStreak(suppAdherence);
-
-  const costPerMeal = nutritionDaily.length > 0
-    ? spend / (nutritionDaily.length * 3)
-    : 0;
 
   // Date navigation
   const today = new Date();
@@ -324,7 +328,7 @@ export function ProgressClient({
       </div>
 
       {/* Overview Scorecard */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Card>
           <CardContent className="py-4 text-center">
             <p className="text-2xl font-bold text-[#E07A3A]">{macroAvg.calories.toLocaleString()}</p>
@@ -351,13 +355,6 @@ export function ProgressClient({
             <p className="text-2xl font-bold text-[#7C3AED]">{totalSuppAdherence}%</p>
             <p className="text-xs text-neutral-500 mt-1">Supp Adherence</p>
             <p className="text-[10px] text-neutral-400">of days taken</p>
-          </CardContent>
-        </Card>
-        <Card className="col-span-2 md:col-span-1">
-          <CardContent className="py-4 text-center">
-            <p className="text-2xl font-bold text-[#3A8A5C]">{formatCurrency(savings > 0 ? savings : 0)}</p>
-            <p className="text-xs text-neutral-500 mt-1">Saved vs Fast Food</p>
-            <p className="text-[10px] text-neutral-400">this {view}</p>
           </CardContent>
         </Card>
       </div>
@@ -632,35 +629,332 @@ export function ProgressClient({
         </CardContent>
       </Card>
 
-      {/* Spending Summary */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <DollarSign className="w-4 h-4 text-[#3A8A5C]" />
-            Spending Summary
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="text-center">
-              <p className="text-2xl font-bold">{formatCurrency(spend)}</p>
-              <p className="text-xs text-neutral-500">Total Spent</p>
+      {/* Weight Trend */}
+      {(() => {
+        const allWeightPoints = weightHistory
+          .filter((log) => log.weightLbs != null)
+          .map((log) => ({ date: log.date, weight: log.weightLbs as number }))
+          .sort((a, b) => a.date.localeCompare(b.date));
+
+        const todayStr = new Date().toISOString().split('T')[0];
+
+        const getPeriodWindow = (period: typeof weightPeriod, offset: number): { start: Date; end: Date; label: string } => {
+          const ref = new Date(todayStr + 'T00:00:00');
+          if (period === 'all') {
+            const earliest = allWeightPoints.length > 0
+              ? new Date(allWeightPoints[0].date + 'T00:00:00')
+              : new Date(ref.getFullYear(), 0, 1);
+            return { start: earliest, end: ref, label: 'All time' };
+          }
+          if (period === 'week') {
+            const dayOfWeek = ref.getDay();
+            const daysToMon = (dayOfWeek + 6) % 7;
+            const monThisWeek = new Date(ref);
+            monThisWeek.setDate(ref.getDate() - daysToMon);
+            monThisWeek.setHours(0, 0, 0, 0);
+            const start = new Date(monThisWeek);
+            start.setDate(start.getDate() + offset * 7);
+            const end = new Date(start);
+            end.setDate(start.getDate() + 6);
+            const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            return { start, end, label: `${fmt(start)} – ${fmt(end).split(' ')[1]}, ${end.getFullYear()}` };
+          }
+          if (period === 'month') {
+            const base = new Date(ref.getFullYear(), ref.getMonth() + offset, 1);
+            const start = new Date(base.getFullYear(), base.getMonth(), 1);
+            const end = new Date(base.getFullYear(), base.getMonth() + 1, 0);
+            return { start, end, label: start.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) };
+          }
+          if (period === 'quarter') {
+            const currentQ = Math.floor(ref.getMonth() / 3);
+            const targetQ = currentQ + offset;
+            const year = ref.getFullYear() + Math.floor(targetQ / 4);
+            const q = ((targetQ % 4) + 4) % 4;
+            const start = new Date(year, q * 3, 1);
+            const end = new Date(year, q * 3 + 3, 0);
+            const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+            return { start, end, label: `${fmt(start)} – ${fmt(end)}` };
+          }
+          if (period === 'semester') {
+            const currentS = ref.getMonth() < 6 ? 0 : 1;
+            const totalS = ref.getFullYear() * 2 + currentS + offset;
+            const year = Math.floor(totalS / 2);
+            const s = ((totalS % 2) + 2) % 2;
+            const start = new Date(year, s * 6, 1);
+            const end = new Date(year, s * 6 + 6, 0);
+            const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+            return { start, end, label: `${fmt(start)} – ${fmt(end)}` };
+          }
+          const year = ref.getFullYear() + offset;
+          return { start: new Date(year, 0, 1), end: new Date(year, 11, 31), label: String(year) };
+        };
+
+        const { start: windowStart, end: windowEnd, label: windowLabel } = getPeriodWindow(weightPeriod, weightOffset);
+        const windowStartStr = windowStart.toISOString().split('T')[0];
+        const windowEndStr = windowEnd.toISOString().split('T')[0];
+        const effectiveEndStr = windowEndStr > todayStr ? todayStr : windowEndStr;
+
+        const periodPoints = allWeightPoints.filter(p => p.date >= windowStartStr && p.date <= effectiveEndStr);
+        const chartPoints = periodPoints.map((p) => {
+          const d = new Date(p.date + 'T00:00:00');
+          let xLabel: string;
+          if (weightPeriod === 'week') xLabel = d.toLocaleDateString('en-US', { weekday: 'short' });
+          else if (weightPeriod === 'month') xLabel = String(d.getDate());
+          else xLabel = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          return { date: p.date, weight: p.weight, label: xLabel };
+        });
+
+        const chartWeights = chartPoints.map(p => p.weight);
+        const yMin = chartWeights.length > 0 ? Math.floor(Math.min(...chartWeights)) - 2 : 140;
+        const yMax = chartWeights.length > 0 ? Math.ceil(Math.max(...chartWeights)) + 2 : 200;
+
+        const periodFirst = chartPoints.length > 0 ? chartPoints[0].weight : null;
+        const periodLast = chartPoints.length > 0 ? chartPoints[chartPoints.length - 1].weight : null;
+        const trendDelta = periodFirst != null && periodLast != null ? periodLast - periodFirst : null;
+        const STABLE_THRESHOLD = 0.5;
+        const trendStatus: 'stable' | 'gaining' | 'losing' =
+          trendDelta == null || Math.abs(trendDelta) < STABLE_THRESHOLD ? 'stable'
+          : trendDelta > 0 ? 'gaining' : 'losing';
+        const trendColor = trendStatus === 'losing' ? '#4ade80' : trendStatus === 'gaining' ? '#f87171' : '#9ca3af';
+        const trendArrow = trendStatus === 'losing' ? '↓' : trendStatus === 'gaining' ? '↑' : '→';
+        const fmtTrend = (n: number | null) => { if (n == null) return '—'; const sign = n > 0 ? '+' : ''; return `${sign}${n.toFixed(1)} lb`; };
+
+        const lastRecorded = allWeightPoints.length > 0 ? allWeightPoints[allWeightPoints.length - 1] : null;
+        const displayWeight = lastRecorded?.weight ?? null;
+
+        const PERIOD_TABS: Array<{ id: typeof weightPeriod; label: string }> = [
+          { id: 'week', label: 'Week' },
+          { id: 'month', label: 'Month' },
+          { id: 'quarter', label: 'Quarter' },
+          { id: 'semester', label: 'Semester' },
+          { id: 'year', label: 'Year' },
+          { id: 'all', label: 'All' },
+        ];
+
+        const canGoForward = weightPeriod !== 'all' && windowEndStr < todayStr;
+        const canGoBack = weightPeriod !== 'all' && allWeightPoints.some(p => p.date < windowStartStr);
+
+        const maxTicks = weightPeriod === 'week' ? 7 : weightPeriod === 'month' ? 10 : 8;
+        const tickStep = chartPoints.length > maxTicks ? Math.ceil(chartPoints.length / maxTicks) : 1;
+        const visibleTicks = new Set<number>();
+        chartPoints.forEach((_, i) => { if (i === 0 || i === chartPoints.length - 1 || i % tickStep === 0) visibleTicks.add(i); });
+
+        return (
+          <Card className="border-neutral-800 bg-neutral-950">
+            <CardContent className="py-5 px-5">
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Scale className="w-5 h-5 text-[#818cf8]" />
+                  <p className="text-base font-semibold text-white">Weight</p>
+                </div>
+                <div className="text-right">
+                  {displayWeight != null ? (
+                    <>
+                      <p className="text-4xl font-bold text-white leading-none">
+                        {displayWeight.toFixed(1)}
+                        <span className="text-lg font-medium text-neutral-400 ml-1">lbs</span>
+                      </p>
+                      {lastRecorded && (
+                        <p className="text-[10px] text-neutral-500 mt-0.5">
+                          Last recorded · {new Date(lastRecorded.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-sm text-neutral-400">No data</p>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-1 mb-4 flex-wrap">
+                {PERIOD_TABS.map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => { setWeightPeriod(tab.id); setWeightOffset(0); }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${weightPeriod === tab.id ? 'bg-neutral-700 text-white' : 'text-neutral-400 hover:text-neutral-200'}`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+              {weightPeriod !== 'all' ? (
+                <div className="flex items-center justify-between mb-3">
+                  <button onClick={() => canGoBack && setWeightOffset(o => o - 1)} disabled={!canGoBack} className="p-1 rounded-md text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors" aria-label="Previous period">
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <span className="text-xs font-medium text-neutral-300">{windowLabel}</span>
+                  <button onClick={() => canGoForward && setWeightOffset(o => o + 1)} disabled={!canGoForward} className="p-1 rounded-md text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors" aria-label="Next period">
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-center mb-3">
+                  <span className="text-xs font-medium text-neutral-300">{windowLabel}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between mb-4 px-1">
+                <div>
+                  <p className="text-[10px] uppercase tracking-widest text-neutral-500 mb-0.5">Weight</p>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-base font-bold" style={{ color: trendColor }}>{trendArrow}</span>
+                    <span className="text-sm font-semibold text-white capitalize">{trendStatus}</span>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] uppercase tracking-widest text-neutral-500 mb-0.5">Trend</p>
+                  <p className="text-sm font-semibold" style={{ color: trendColor }}>{fmtTrend(trendDelta)}</p>
+                </div>
+              </div>
+              {chartPoints.length > 1 ? (
+                <div style={{ height: 220 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={chartPoints} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="4 4" stroke="rgba(255,255,255,0.06)" vertical={true} horizontal={false} />
+                      <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#6b7280' }} tickLine={false} axisLine={false} tickFormatter={(_value, index) => visibleTicks.has(index) ? _value : ''} interval={0} />
+                      <YAxis domain={[yMin, yMax]} tick={{ fontSize: 10, fill: '#6b7280' }} tickLine={false} axisLine={false} width={36} tickFormatter={(v: number) => `${v}`} />
+                      <Tooltip
+                        contentStyle={{ backgroundColor: '#1c1c1e', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 12, color: '#f5f5f5' }}
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        formatter={(value: any) => [typeof value === 'number' ? `${value.toFixed(1)} lbs` : `${value} lbs`, 'Weight']}
+                        labelFormatter={(label, payload) => {
+                          if (payload && payload.length > 0) {
+                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                            const item = payload[0] as any;
+                            if (item?.payload?.date) return new Date(item.payload.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                          }
+                          return label;
+                        }}
+                        labelStyle={{ color: '#9ca3af', marginBottom: 2 }}
+                      />
+                      <Line type="monotone" dataKey="weight" stroke="#818cf8" strokeWidth={2} strokeDasharray="5 3" dot={{ r: 3, fill: '#818cf8', strokeWidth: 0 }} activeDot={{ r: 5, fill: '#818cf8', strokeWidth: 0 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : chartPoints.length === 1 ? (
+                <div className="flex items-center justify-center h-[220px]">
+                  <p className="text-sm text-neutral-400">Only one entry — log more to see the trend.</p>
+                </div>
+              ) : (
+                <div className="flex items-center justify-center h-[220px]">
+                  <p className="text-sm text-neutral-400">No weight data for this period.</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        );
+      })()}
+
+      {/* Sleep History */}
+      {sleepHistory.length > 0 && (() => {
+        const sorted = [...sleepHistory].sort((a, b) => a.date.localeCompare(b.date));
+        const chartData = sorted.map(sl => {
+          const d = new Date(sl.date + 'T00:00:00');
+          const label = view === 'week'
+            ? d.toLocaleDateString('en-US', { weekday: 'short' })
+            : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          return {
+            label,
+            deep: sl.deepSleep != null ? +(sl.deepSleep / 60).toFixed(2) : 0,
+            rem: sl.remSleep != null ? +(sl.remSleep / 60).toFixed(2) : 0,
+            light: sl.lightSleep != null ? +(sl.lightSleep / 60).toFixed(2) : 0,
+            score: sl.score ?? 0,
+            hrv: sl.hrv ?? 0,
+          };
+        });
+        const withScore = sorted.filter(sl => sl.score != null);
+        const avgScore = withScore.length > 0 ? Math.round(withScore.reduce((s, sl) => s + (sl.score ?? 0), 0) / withScore.length) : null;
+        const withDeep = sorted.filter(sl => sl.deepSleep != null);
+        const avgDeepMins = withDeep.length > 0 ? Math.round(withDeep.reduce((s, sl) => s + (sl.deepSleep ?? 0), 0) / withDeep.length) : null;
+        const withHrv = sorted.filter(sl => sl.hrv != null);
+        const avgHrv = withHrv.length > 0 ? Math.round(withHrv.reduce((s, sl) => s + (sl.hrv ?? 0), 0) / withHrv.length) : null;
+        const fmtMins = (m: number) => { const h = Math.floor(m / 60); const min = m % 60; return h > 0 ? `${h}h ${min}m` : `${min}m`; };
+
+        return (
+          <Card className="border-neutral-800 bg-neutral-950">
+            <CardContent className="py-5 px-5 space-y-4">
+              <div className="flex items-center gap-2">
+                <MoonIcon className="w-4 h-4 text-indigo-400" />
+                <span className="text-base font-semibold text-white">Sleep History</span>
+              </div>
+              <div style={{ height: 160 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={chartData} margin={{ top: 4, right: 4, left: -24, bottom: 0 }} barCategoryGap="20%">
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                    <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#6b7280' }} tickLine={false} axisLine={false} />
+                    <YAxis domain={[0, 10]} tick={{ fontSize: 10, fill: '#6b7280' }} tickLine={false} axisLine={false} tickFormatter={v => `${v}h`} />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#1c1c1e', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 11, color: '#f5f5f5' }}
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      formatter={(value: any, name: any) => [typeof value === 'number' ? `${value.toFixed(1)}h` : value, typeof name === 'string' ? name.charAt(0).toUpperCase() + name.slice(1) : name]}
+                      labelStyle={{ color: '#9ca3af', marginBottom: 2 }}
+                    />
+                    <Bar dataKey="deep" stackId="sleep" fill="#6366f1" />
+                    <Bar dataKey="rem" stackId="sleep" fill="#a78bfa" />
+                    <Bar dataKey="light" stackId="sleep" fill="#60a5fa" radius={[3, 3, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="flex items-center gap-4">
+                {[{ color: '#6366f1', label: 'Deep' }, { color: '#a78bfa', label: 'REM' }, { color: '#60a5fa', label: 'Light' }].map(({ color, label }) => (
+                  <div key={label} className="flex items-center gap-1.5">
+                    <div className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: color }} />
+                    <span className="text-[11px] text-neutral-400">{label}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="grid grid-cols-3 gap-3 pt-2 border-t border-neutral-800">
+                <div className="text-center">
+                  <p className="text-lg font-bold text-white">{avgScore ?? '—'}</p>
+                  <p className="text-xs text-neutral-500">Avg Score</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-lg font-bold text-white">{avgDeepMins != null ? fmtMins(avgDeepMins) : '—'}</p>
+                  <p className="text-xs text-neutral-500">Avg Deep</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-lg font-bold text-white">{avgHrv != null ? `${avgHrv} ms` : '—'}</p>
+                  <p className="text-xs text-neutral-500">Avg HRV</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })()}
+
+      {/* Water & Coffee */}
+      <div className="grid grid-cols-2 gap-3">
+        <Card>
+          <CardContent className="py-4 px-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Droplets className="w-4 h-4 text-[#0EA5E9]" />
+              <p className="text-sm font-medium">Avg Water</p>
             </div>
-            <div className="text-center">
-              <p className="text-2xl font-bold text-neutral-400 line-through">{formatCurrency(fastFood)}</p>
-              <p className="text-xs text-neutral-500">Fast Food Equivalent</p>
+            <p className="text-2xl font-bold">{avgWaterOz}<span className="text-sm font-normal text-neutral-500 ml-1">oz/day</span></p>
+            <div className="mt-2">
+              <div className="flex justify-between text-xs text-neutral-500 mb-1">
+                <span>{avgWaterOz} oz</span>
+                <span>112 oz</span>
+              </div>
+              <Progress value={Math.min((avgWaterOz / 112) * 100, 100)} indicatorClassName="bg-[#0EA5E9]" />
             </div>
-            <div className="text-center">
-              <p className="text-2xl font-bold text-[#3A8A5C]">{formatCurrency(savings > 0 ? savings : 0)}</p>
-              <p className="text-xs text-neutral-500">Total Savings</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="py-4 px-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Coffee className="w-4 h-4 text-[#8B6914]" />
+              <p className="text-sm font-medium">Avg Coffee</p>
             </div>
-            <div className="text-center">
-              <p className="text-2xl font-bold">{formatCurrency(costPerMeal)}</p>
-              <p className="text-xs text-neutral-500">Cost per Meal</p>
+            <p className="text-2xl font-bold">{avgCoffeeCups}<span className="text-sm font-normal text-neutral-500 ml-1">cups/day</span></p>
+            <div className="mt-2">
+              <div className="flex justify-between text-xs text-neutral-500 mb-1">
+                <span>{avgCoffeeCups} cups</span>
+                <span>3 cups</span>
+              </div>
+              <Progress value={Math.min((avgCoffeeCups / 3) * 100, 100)} indicatorClassName={avgCoffeeCups > 3 ? 'bg-red-500' : 'bg-[#8B6914]'} />
             </div>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

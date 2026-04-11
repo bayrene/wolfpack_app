@@ -2,7 +2,7 @@ import { getMealsForDate, getWeeklySpending } from '@/db/queries/meals';
 import { getFreezerInventory } from '@/db/queries/freezer';
 import { getAllRecipes, getRecipeById } from '@/db/queries/recipes';
 import { getDailyLog, getDailyLogsForRange } from '@/db/queries/daily-log';
-import { getSupplementLogs } from '@/db/queries/supplements';
+import { getSupplementLogs, getActiveSupplements } from '@/db/queries/supplements';
 import { getUserSettings } from '@/db/queries/user-settings';
 import { getAllSleepLogs } from '@/db/queries/sleep';
 import { getOuraDaily, getOuraHistory, getSleepLog, getSleepHistory } from '@/db/queries/oura';
@@ -28,20 +28,19 @@ export default async function DashboardPage() {
   const now = new Date();
   const weekStart = format(startOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd');
   const weekEnd = format(endOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd');
-  const ninetyDaysAgo = format(new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd');
-
   const thirtyDaysAgo = format(new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd');
 
-  const [todayMeals, freezerItems, allRecipes, weeklySpend, todayStepsLog, todaySupplements, settings, sleepLogs, weightHistory, ouraToday, sleepToday, ouraHistory, sleepHistory] = await Promise.all([
+  const [todayMeals, freezerItems, allRecipes, weeklySpend, todayStepsLog, todaySupplements, activeSupplements, settings, sleepLogs, stepsHistory, ouraToday, sleepToday, ouraHistory, sleepHistory] = await Promise.all([
     getMealsForDate(today),
     getFreezerInventory(),
     getAllRecipes(),
     getWeeklySpending(weekStart, weekEnd),
     getDailyLog(today, 'me'),
     getSupplementLogs(today),
+    getActiveSupplements(),
     getUserSettings(),
     getAllSleepLogs(),
-    getDailyLogsForRange(ninetyDaysAgo, today, 'me'),
+    getDailyLogsForRange(thirtyDaysAgo, today, 'me'),
     getOuraDaily(today),
     getSleepLog(today),
     getOuraHistory(thirtyDaysAgo, today),
@@ -51,7 +50,6 @@ export default async function DashboardPage() {
   const todaySteps = todayStepsLog?.steps ?? 0;
   const todayWater = todayStepsLog?.waterOz ?? 0;
   const todayCoffee = todayStepsLog?.coffee ?? 0;
-  const todayWeight = todayStepsLog?.weightLbs ?? null;
 
   // Build targets from DB settings
   const targets = {
@@ -215,8 +213,9 @@ export default async function DashboardPage() {
       todayCoffee={todayCoffee}
       upcomingEvents={upcomingEvents}
       latestSleepLog={sleepLogs[0] ?? null}
-      weightHistory={weightHistory}
-      todayWeight={todayWeight}
+      todaySupplements={todaySupplements}
+      activeSupplements={activeSupplements}
+      stepsHistory={stepsHistory}
       userSettings={{ name: settings.name ?? 'Rene', dob: settings.dob ?? '1993-03-14', heightIn: settings.heightIn ?? 69, weightLbs: settings.weightLbs ?? 150 }}
       todayMeals={todayMeals.map(({ meal, recipe }) => ({
         ...meal,
