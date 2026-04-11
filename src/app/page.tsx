@@ -23,28 +23,31 @@ export interface UpcomingEvent {
   href: string;
 }
 
-export default async function DashboardPage() {
+export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ date?: string }> }) {
+  const params = await searchParams;
   const today = todayISO();
+  const selectedDate = params.date && /^\d{4}-\d{2}-\d{2}$/.test(params.date) ? params.date : today;
   const now = new Date();
   const weekStart = format(startOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd');
   const weekEnd = format(endOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd');
-  const thirtyDaysAgo = format(new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd');
+  const selectedDateObj = new Date(selectedDate + 'T00:00:00');
+  const thirtyDaysAgo = format(new Date(selectedDateObj.getTime() - 30 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd');
 
   const [todayMeals, freezerItems, allRecipes, weeklySpend, todayStepsLog, todaySupplements, activeSupplements, settings, sleepLogs, stepsHistory, ouraToday, sleepToday, ouraHistory, sleepHistory] = await Promise.all([
-    getMealsForDate(today),
+    getMealsForDate(selectedDate),
     getFreezerInventory(),
     getAllRecipes(),
     getWeeklySpending(weekStart, weekEnd),
-    getDailyLog(today, 'me'),
-    getSupplementLogs(today),
+    getDailyLog(selectedDate, 'me'),
+    getSupplementLogs(selectedDate),
     getActiveSupplements(),
     getUserSettings(),
     getAllSleepLogs(),
-    getDailyLogsForRange(thirtyDaysAgo, today, 'me'),
-    getOuraDaily(today),
-    getSleepLog(today),
-    getOuraHistory(thirtyDaysAgo, today),
-    getSleepHistory(thirtyDaysAgo, today),
+    getDailyLogsForRange(thirtyDaysAgo, selectedDate, 'me'),
+    getOuraDaily(selectedDate),
+    getSleepLog(selectedDate),
+    getOuraHistory(thirtyDaysAgo, selectedDate),
+    getSleepHistory(thirtyDaysAgo, selectedDate),
   ]);
 
   const todaySteps = todayStepsLog?.steps ?? 0;
@@ -200,6 +203,7 @@ export default async function DashboardPage() {
   return (
     <DashboardClient
       today={today}
+      selectedDate={selectedDate}
       myNutrition={myNutrition}
       targets={targets}
       freezerData={freezerData}

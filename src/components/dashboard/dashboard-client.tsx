@@ -31,6 +31,7 @@ import { toast } from 'sonner';
 import type { Recipe, SleepLog, DailyLog, OuraDaily, Supplement, SupplementLogEntry } from '@/db/schema';
 import { logSupplement, deleteSupplementLog } from '@/db/queries/supplements';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 interface NutritionData {
   calories: number;
@@ -94,6 +95,7 @@ interface UserSettings {
 
 interface Props {
   today: string;
+  selectedDate: string;
   myNutrition: NutritionData;
   targets: MacroTargets;
   freezerData: FreezerData[];
@@ -260,6 +262,7 @@ function NutritionCard({ title, data, targets, microTargets }: { title: string; 
 
 export function DashboardClient({
   today,
+  selectedDate,
   myNutrition,
   targets,
   freezerData,
@@ -283,10 +286,12 @@ export function DashboardClient({
   ouraHistory = [],
   sleepHistory = [],
 }: Props) {
+  const router = useRouter();
+  const dateInputRef = useRef<HTMLInputElement>(null);
   const [quickLogOpen, setQuickLogOpen] = useState(false);
   const [selectedMealType, setSelectedMealType] = useState<string>('breakfast');
   const [steps, setSteps] = useState(todaySteps);
-  const [stepsDate, setStepsDate] = useState(today);
+  const [stepsDate, setStepsDate] = useState(selectedDate);
   const [water, setWater] = useState(todayWater);
   const [coffee, setCoffee] = useState(todayCoffee);
   const [isPending, startTransition] = useTransition();
@@ -350,7 +355,7 @@ export function DashboardClient({
       waterInputRef.current.value = String(value);
     }
     startTransition(async () => {
-      await upsertWater(today, 'me', value);
+      await upsertWater(selectedDate, 'me', value);
       toast.success('Water updated');
     });
   };
@@ -359,7 +364,7 @@ export function DashboardClient({
     const clamped = Math.max(0, value);
     setCoffee(clamped);
     startTransition(async () => {
-      await upsertCoffee(today, 'me', clamped);
+      await upsertCoffee(selectedDate, 'me', clamped);
       toast.success(clamped > 0 ? `${clamped} cup${clamped !== 1 ? 's' : ''} of coffee` : 'Coffee reset');
     });
   };
@@ -425,13 +430,110 @@ export function DashboardClient({
         if (existing) {
           await deleteSupplementLog(existing.log.id);
         }
-        await logSupplement({ supplementId: suppId, date: today, time, dose: next, person: 'me', situation: 'other' });
+        await logSupplement({ supplementId: suppId, date: selectedDate, time, dose: next, person: 'me', situation: 'other' });
       }
     });
   };
 
+  // Date navigation helpers
+  const isToday = selectedDate === today;
+  const yesterdayDate = (() => {
+    const d = new Date(today + 'T00:00:00');
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().split('T')[0];
+  })();
+  const isYesterday = selectedDate === yesterdayDate;
+
+  const selectedDateLabel = isToday
+    ? 'Today'
+    : isYesterday
+    ? 'Yesterday'
+    : new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', {
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric',
+      });
+
+  const navigateDate = (direction: 'prev' | 'next') => {
+    const d = new Date(selectedDate + 'T00:00:00');
+    d.setDate(d.getDate() + (direction === 'prev' ? -1 : 1));
+    const newDate = d.toISOString().split('T')[0];
+    if (direction === 'next' && newDate > today) return;
+    router.push(`/?date=${newDate}`);
+  };
+
+  const handleDatePickerChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    if (val && /^\d{4}-\d{2}-\d{2}$/.test(val) && val <= today) {
+      if (val === today) {
+        router.push('/');
+      } else {
+        router.push(`/?date=${val}`);
+      }
+    }
+  };
+
   return (
     <div className="space-y-6">
+      {/* Date Navigation Bar */}
+      <div className="flex flex-col items-center gap-1.5">
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => navigateDate('prev')}
+            className="p-1.5 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+            aria-label="Previous day"
+          >
+            <ChevronLeft className="w-4 h-4 text-neutral-600 dark:text-neutral-400" />
+          </button>
+
+          <div className="relative flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => dateInputRef.current?.click()}
+              className="flex items-center gap-1.5 text-sm font-medium text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors"
+              aria-label="Pick a date"
+            >
+              <span>{selectedDateLabel}</span>
+              <Calendar className="w-3.5 h-3.5 text-neutral-400" />
+            </button>
+            <input
+              ref={dateInputRef}
+              type="date"
+              max={today}
+              defaultValue={selectedDate}
+              onChange={handleDatePickerChange}
+              className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+              aria-hidden="true"
+              tabIndex={-1}
+            />
+          </div>
+
+          <button
+            type="button"
+            onClick={() => navigateDate('next')}
+            disabled={isToday}
+            className={`p-1.5 rounded-lg transition-colors ${
+              isToday
+                ? 'opacity-50 cursor-not-allowed'
+                : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'
+            }`}
+            aria-label="Next day"
+          >
+            <ChevronRight className="w-4 h-4 text-neutral-600 dark:text-neutral-400" />
+          </button>
+        </div>
+
+        {!isToday && (
+          <Link
+            href="/"
+            className="text-xs px-2.5 py-0.5 rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors font-medium"
+          >
+            Back to Today
+          </Link>
+        )}
+      </div>
+
       {/* Header */}
       {(() => {
         const profile = userSettings ?? USER_PROFILE;
