@@ -32,7 +32,7 @@ export default async function DashboardPage() {
 
   const thirtyDaysAgo = format(new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd');
 
-  const [todayMeals, freezerItems, allRecipes, weeklySpend, todayStepsLog, todaySupplements, settings, sleepLogs, weightHistory, ouraToday, sleepToday, ouraHistory] = await Promise.all([
+  const [todayMeals, freezerItems, allRecipes, weeklySpend, todayStepsLog, todaySupplements, settings, sleepLogs, weightHistory, ouraToday, sleepToday, ouraHistory, sleepHistory] = await Promise.all([
     getMealsForDate(today),
     getFreezerInventory(),
     getAllRecipes(),
@@ -45,6 +45,7 @@ export default async function DashboardPage() {
     getOuraDaily(today),
     getSleepLog(today),
     getOuraHistory(thirtyDaysAgo, today),
+    getSleepHistory(thirtyDaysAgo, today),
   ]);
 
   const todaySteps = todayStepsLog?.steps ?? 0;
@@ -224,6 +225,7 @@ export default async function DashboardPage() {
       ouraToday={ouraToday}
       sleepToday={sleepToday}
       ouraHistory={ouraHistory}
+      sleepHistory={sleepHistory}
     />
   );
 }

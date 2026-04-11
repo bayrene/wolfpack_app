@@ -706,6 +706,8 @@ export const sleepLog = sqliteTable('sleep_log', {
   tempDeviation: real('temp_deviation'), // °C from baseline
   respiratoryRate: real('respiratory_rate'), // breaths/min
   spo2: integer('spo2'),                 // % blood oxygen
+  sleepPhases: text('sleep_phases'),     // Oura sleep_phase_5_min string e.g. "44332211..."
+  awakenCount: integer('awaken_count'),  // transitions TO awake (stage 1) from non-awake
   notes: text('notes'),
   source: text('source').default('manual'), // 'manual' | 'oura'
   createdAt: text('created_at').default(sql`(datetime('now'))`),

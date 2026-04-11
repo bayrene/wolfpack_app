@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useTransition, useEffect, useCallback } from 'react';
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, BarChart, Bar } from 'recharts';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -112,6 +112,7 @@ interface Props {
   ouraToday?: OuraDaily | null;
   sleepToday?: SleepLog | null;
   ouraHistory?: OuraDaily[];
+  sleepHistory?: SleepLog[];
   todayMeals: Array<{
     id: number;
     date: string;
@@ -141,10 +142,10 @@ const MICRO_BAR_CONFIG = [
   { key: 'potassium' as const, label: 'Potassium', color: '#06B6D4', unit: 'mg' },
 ];
 
-const CARD_IDS = ['oura', 'quick-log', 'nutrition', 'sleep', 'steps', 'water', 'coffee', 'weight', 'meals'] as const;
+const CARD_IDS = ['oura', 'quick-log', 'nutrition', 'steps', 'water', 'coffee', 'weight', 'meals'] as const;
 type CardId = typeof CARD_IDS[number];
 const DEFAULT_ORDER: CardId[] = [...CARD_IDS];
-const STORAGE_KEY = 'dashboard-card-order-v6';
+const STORAGE_KEY = 'dashboard-card-order-v7';
 
 function ReorderableCard({ children, id, index, total, onMoveUp, onMoveDown }: {
   children: React.ReactNode;
@@ -277,6 +278,7 @@ export function DashboardClient({
   ouraToday = null,
   sleepToday = null,
   ouraHistory = [],
+  sleepHistory = [],
 }: Props) {
   const [quickLogOpen, setQuickLogOpen] = useState(false);
   const [selectedMealType, setSelectedMealType] = useState<string>('breakfast');
@@ -286,6 +288,7 @@ export function DashboardClient({
   const [coffee, setCoffee] = useState(todayCoffee);
   const [isPending, startTransition] = useTransition();
   const [isSyncingOura, setIsSyncingOura] = useState(false);
+  const [sleepHistoryRange, setSleepHistoryRange] = useState<7 | 30>(7);
   const stepsInputRef = useRef<HTMLInputElement>(null);
   const waterInputRef = useRef<HTMLInputElement>(null);
   const [cardOrder, setCardOrder] = useState<CardId[]>(DEFAULT_ORDER);
@@ -475,12 +478,9 @@ export function DashboardClient({
             const totalSleep = sleepToday?.totalSleep ?? null;
             const deepSleep = sleepToday?.deepSleep ?? null;
             const remSleep = sleepToday?.remSleep ?? null;
-            const lightSleep = sleepToday?.lightSleep ?? null;
-            const awakeDuration = sleepToday?.awakeDuration ?? null;
             const hrv = sleepToday?.hrv ?? null;
             const rhr = sleepToday?.restingHeartRate ?? null;
-
-            const stageTotal = totalSleep ?? ((deepSleep ?? 0) + (remSleep ?? 0) + (lightSleep ?? 0) + (awakeDuration ?? 0));
+            const awakenCount = (sleepToday as (SleepLog & { awakenCount?: number | null }) | null)?.awakenCount ?? null;
 
             const stressColor = stressScore == null ? '#9ca3af'
               : stressScore >= 70 ? '#4ade80'
@@ -490,6 +490,39 @@ export function DashboardClient({
               : stressScore >= 70 ? 'Low'
               : stressScore >= 40 ? 'Medium'
               : 'High';
+
+            // Hypnogram parsing
+            // '1'=awake, '2'=light, '3'=REM, '4'=deep, '0'=undefined
+            const STAGE_COLORS: Record<string, string> = {
+              '4': '#6366f1',
+              '3': '#a78bfa',
+              '2': '#60a5fa',
+              '1': '#f97316',
+              '0': '#374151',
+            };
+            type PhaseSegment = { stage: string; duration: number };
+
+            const parsePhases = (phases: string | null | undefined): PhaseSegment[] => {
+              if (!phases) return [];
+              const segments: PhaseSegment[] = [];
+              let current = phases[0];
+              let count = 1;
+              for (let i = 1; i < phases.length; i++) {
+                if (phases[i] === current) {
+                  count++;
+                } else {
+                  segments.push({ stage: current, duration: count * 5 });
+                  current = phases[i];
+                  count = 1;
+                }
+              }
+              segments.push({ stage: current, duration: count * 5 });
+              return segments;
+            };
+
+            const sleepPhasesRaw = (sleepToday as (SleepLog & { sleepPhases?: string | null }) | null)?.sleepPhases ?? null;
+            const phaseSegments = parsePhases(sleepPhasesRaw);
+            const totalPhaseMins = phaseSegments.reduce((acc, s) => acc + s.duration, 0);
 
             const ScoreRing = ({ score, color, label }: { score: number | null; color: string; label: string }) => {
               const radius = 32;
@@ -514,6 +547,23 @@ export function DashboardClient({
               );
             };
 
+            // Build chart data for 7d / 30d toggle (state hoisted to component top)
+            const historySlice = [...sleepHistory]
+              .sort((a, b) => a.date.localeCompare(b.date))
+              .slice(-(sleepHistoryRange));
+
+            const chartData = historySlice.map((s) => {
+              const d = new Date(s.date + 'T00:00:00');
+              const label = d.toLocaleDateString('en-US', { weekday: 'short' });
+              return {
+                label,
+                deep: s.deepSleep != null ? +(s.deepSleep / 60).toFixed(2) : 0,
+                rem: s.remSleep != null ? +(s.remSleep / 60).toFixed(2) : 0,
+                light: s.lightSleep != null ? +(s.lightSleep / 60).toFixed(2) : 0,
+                score: s.score ?? null,
+              };
+            });
+
             return (
               <Card className="border-neutral-800 bg-neutral-950">
                 <CardContent className="py-5 px-5">
@@ -530,7 +580,6 @@ export function DashboardClient({
                           const res = await fetch('/api/oura-sync', { method: 'POST' });
                           if (res.ok) {
                             toast.success('Oura data synced');
-                            // Reload page to reflect new data
                             window.location.reload();
                           } else {
                             toast.error('Sync failed');
@@ -555,85 +604,145 @@ export function DashboardClient({
                     </div>
                   ) : (
                     <div className="space-y-5">
-                      {/* Score Rings */}
+                      {/* A. Score Rings */}
                       <div className="flex items-start justify-around">
                         <ScoreRing score={readiness} color="#4ade80" label="Readiness" />
                         <ScoreRing score={sleepScore} color="#a78bfa" label="Sleep" />
                         <ScoreRing score={activity} color="#fb923c" label="Activity" />
                       </div>
 
-                      {/* Sleep Breakdown */}
+                      {/* B. Last Night's Sleep — Hypnogram */}
                       {sleepToday && (
                         <div className="bg-neutral-900 rounded-xl p-4 space-y-3">
                           <div className="flex items-center justify-between">
-                            <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">Sleep</span>
+                            <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">Last Night&apos;s Sleep</span>
                             <span className="text-sm font-semibold text-white">{fmtMins(totalSleep)}</span>
                           </div>
 
-                          {/* Stage highlights */}
-                          <div className="grid grid-cols-3 gap-2">
-                            <div className="flex flex-col items-center bg-indigo-950/60 rounded-lg py-2.5">
-                              <span className="text-[10px] text-indigo-300 font-medium mb-1">Deep</span>
-                              <span className="text-sm font-bold text-indigo-400">{fmtMins(deepSleep)}</span>
+                          {/* Hypnogram bar */}
+                          {phaseSegments.length > 0 && totalPhaseMins > 0 ? (
+                            <div>
+                              <div className="flex h-8 rounded-lg overflow-hidden w-full" style={{ gap: '1px' }}>
+                                {phaseSegments.map((seg, i) => (
+                                  <div
+                                    key={i}
+                                    style={{
+                                      width: `${(seg.duration / totalPhaseMins) * 100}%`,
+                                      backgroundColor: STAGE_COLORS[seg.stage] ?? '#374151',
+                                      borderRadius: i === 0 ? '8px 0 0 8px' : i === phaseSegments.length - 1 ? '0 8px 8px 0' : '0',
+                                    }}
+                                    title={`${seg.stage === '4' ? 'Deep' : seg.stage === '3' ? 'REM' : seg.stage === '2' ? 'Light' : seg.stage === '1' ? 'Awake' : 'Unknown'} ${seg.duration}m`}
+                                  />
+                                ))}
+                              </div>
+                              {/* Legend */}
+                              <div className="flex items-center gap-4 mt-2 flex-wrap">
+                                {[
+                                  { stage: '4', label: 'Deep' },
+                                  { stage: '3', label: 'REM' },
+                                  { stage: '2', label: 'Light' },
+                                  { stage: '1', label: 'Awake' },
+                                ].map(({ stage, label }) => (
+                                  <div key={stage} className="flex items-center gap-1.5">
+                                    <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: STAGE_COLORS[stage] }} />
+                                    <span className="text-[11px] text-neutral-400">{label}</span>
+                                  </div>
+                                ))}
+                              </div>
                             </div>
-                            <div className="flex flex-col items-center bg-violet-950/60 rounded-lg py-2.5">
-                              <span className="text-[10px] text-violet-300 font-medium mb-1">REM</span>
-                              <span className="text-sm font-bold text-violet-400">{fmtMins(remSleep)}</span>
-                            </div>
-                            <div className="flex flex-col items-center bg-sky-950/60 rounded-lg py-2.5">
-                              <span className="text-[10px] text-sky-300 font-medium mb-1">Light</span>
-                              <span className="text-sm font-bold text-sky-400">{fmtMins(lightSleep)}</span>
-                            </div>
-                          </div>
-
-                          {/* Stage proportion bar */}
-                          {stageTotal > 0 && (
-                            <div className="flex h-2 rounded-full overflow-hidden gap-px">
-                              {(deepSleep ?? 0) > 0 && (
-                                <div className="bg-indigo-500 rounded-l-full" style={{ width: `${((deepSleep ?? 0) / stageTotal) * 100}%` }} />
-                              )}
-                              {(remSleep ?? 0) > 0 && (
-                                <div className="bg-violet-500" style={{ width: `${((remSleep ?? 0) / stageTotal) * 100}%` }} />
-                              )}
-                              {(lightSleep ?? 0) > 0 && (
-                                <div className="bg-sky-400" style={{ width: `${((lightSleep ?? 0) / stageTotal) * 100}%` }} />
-                              )}
-                              {(awakeDuration ?? 0) > 0 && (
-                                <div className="bg-amber-400 rounded-r-full" style={{ width: `${((awakeDuration ?? 0) / stageTotal) * 100}%` }} />
-                              )}
+                          ) : (
+                            <div className="flex items-center justify-center h-8 rounded-lg bg-neutral-800">
+                              <span className="text-[11px] text-neutral-500">No phase data — sync Oura</span>
                             </div>
                           )}
+
+                          {/* C. Sleep Stats Row */}
+                          <div className="grid grid-cols-4 gap-2 pt-1">
+                            <div className="flex flex-col items-center bg-neutral-800/60 rounded-lg py-2.5 px-1">
+                              <span className="text-[10px] text-neutral-400 font-medium mb-1">Total</span>
+                              <span className="text-xs font-bold text-white">{fmtMins(totalSleep)}</span>
+                            </div>
+                            <div className="flex flex-col items-center bg-indigo-950/60 rounded-lg py-2.5 px-1">
+                              <span className="text-[10px] text-indigo-300 font-medium mb-1">Deep</span>
+                              <span className="text-xs font-bold text-indigo-400">{fmtMins(deepSleep)}</span>
+                            </div>
+                            <div className="flex flex-col items-center bg-violet-950/60 rounded-lg py-2.5 px-1">
+                              <span className="text-[10px] text-violet-300 font-medium mb-1">REM</span>
+                              <span className="text-xs font-bold text-violet-400">{fmtMins(remSleep)}</span>
+                            </div>
+                            <div className="flex flex-col items-center bg-orange-950/60 rounded-lg py-2.5 px-1">
+                              <span className="text-[10px] text-orange-300 font-medium mb-1">Wake-ups</span>
+                              <span className="text-xs font-bold text-orange-400">{awakenCount ?? '—'}</span>
+                            </div>
+                          </div>
                         </div>
                       )}
 
-                      {/* Stress & HRV */}
+                      {/* D+E. Sleep History Chart with 7d/30d toggle */}
+                      {sleepHistory.length > 0 && (
+                        <div className="bg-neutral-900 rounded-xl p-4 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">Sleep History</span>
+                            <div className="flex items-center rounded-lg overflow-hidden border border-neutral-700 text-[11px]">
+                              <button
+                                onClick={() => setSleepHistoryRange(7)}
+                                className={`px-2.5 py-1 transition-colors ${sleepHistoryRange === 7 ? 'bg-indigo-600 text-white' : 'text-neutral-400 hover:text-white'}`}
+                              >7d</button>
+                              <button
+                                onClick={() => setSleepHistoryRange(30)}
+                                className={`px-2.5 py-1 transition-colors ${sleepHistoryRange === 30 ? 'bg-indigo-600 text-white' : 'text-neutral-400 hover:text-white'}`}
+                              >30d</button>
+                            </div>
+                          </div>
+                          <div style={{ height: 160 }}>
+                            <ResponsiveContainer width="100%" height="100%">
+                              <BarChart data={chartData} margin={{ top: 4, right: 4, left: -24, bottom: 0 }} barCategoryGap="20%">
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                                <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#6b7280' }} tickLine={false} axisLine={false} />
+                                <YAxis domain={[0, 10]} tick={{ fontSize: 10, fill: '#6b7280' }} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}h`} />
+                                <Tooltip
+                                  contentStyle={{ backgroundColor: '#1c1c1e', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 11, color: '#f5f5f5' }}
+                                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                  formatter={(value: any, name: any) => [typeof value === 'number' ? `${value.toFixed(1)}h` : value, typeof name === 'string' ? name.charAt(0).toUpperCase() + name.slice(1) : name]}
+                                  labelStyle={{ color: '#9ca3af', marginBottom: 2 }}
+                                />
+                                <Bar dataKey="deep" stackId="sleep" fill="#6366f1" radius={[0, 0, 0, 0]} />
+                                <Bar dataKey="rem" stackId="sleep" fill="#a78bfa" radius={[0, 0, 0, 0]} />
+                                <Bar dataKey="light" stackId="sleep" fill="#60a5fa" radius={[3, 3, 0, 0]} />
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+                          {/* Legend */}
+                          <div className="flex items-center gap-4">
+                            {[{ color: '#6366f1', label: 'Deep' }, { color: '#a78bfa', label: 'REM' }, { color: '#60a5fa', label: 'Light' }].map(({ color, label }) => (
+                              <div key={label} className="flex items-center gap-1.5">
+                                <div className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: color }} />
+                                <span className="text-[11px] text-neutral-400">{label}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* F. Stress & HRV */}
                       <div className="grid grid-cols-3 gap-2">
-                        {/* Stress */}
                         <div className="bg-neutral-900 rounded-xl p-3 flex flex-col gap-1">
                           <span className="text-[10px] text-neutral-500 uppercase tracking-wide">Stress</span>
                           <span className="text-lg font-bold" style={{ color: stressColor }}>{stressLabel}</span>
                           {(stressHigh != null || stressRecovery != null) && (
                             <span className="text-[10px] text-neutral-500">
-                              {stressHigh != null ? `${stressHigh}m high` : ''}{stressHigh != null && stressRecovery != null ? ' · ' : ''}{stressRecovery != null ? `${stressRecovery}m recovery` : ''}
+                              {stressHigh != null ? `${stressHigh}m high` : ''}{stressHigh != null && stressRecovery != null ? ' · ' : ''}{stressRecovery != null ? `${stressRecovery}m rec` : ''}
                             </span>
                           )}
                         </div>
-
-                        {/* HRV */}
                         <div className="bg-neutral-900 rounded-xl p-3 flex flex-col gap-1">
                           <span className="text-[10px] text-neutral-500 uppercase tracking-wide">HRV</span>
-                          <span className="text-lg font-bold text-rose-400">
-                            {hrv != null ? hrv : '—'}
-                          </span>
+                          <span className="text-lg font-bold text-rose-400">{hrv != null ? hrv : '—'}</span>
                           {hrv != null && <span className="text-[10px] text-neutral-500">ms avg</span>}
                         </div>
-
-                        {/* Resting HR */}
                         <div className="bg-neutral-900 rounded-xl p-3 flex flex-col gap-1">
                           <span className="text-[10px] text-neutral-500 uppercase tracking-wide">Rest HR</span>
-                          <span className="text-lg font-bold text-sky-400">
-                            {rhr != null ? rhr : '—'}
-                          </span>
+                          <span className="text-lg font-bold text-sky-400">{rhr != null ? rhr : '—'}</span>
                           {rhr != null && <span className="text-[10px] text-neutral-500">bpm</span>}
                         </div>
                       </div>
@@ -641,87 +750,6 @@ export function DashboardClient({
                   )}
                 </CardContent>
               </Card>
-            );
-          },
-          'sleep': () => {
-            const s = latestSleepLog;
-            const score = s?.score;
-            const ringColor = !score ? '#9ca3af' : score >= 85 ? '#10b981' : score >= 70 ? '#f59e0b' : '#ef4444';
-            const scoreLabel = !score ? '' : score >= 85 ? 'Good' : score >= 70 ? 'Fair' : 'Poor';
-            const fmtMins = (m: number | null | undefined) => {
-              if (!m) return '—';
-              const h = Math.floor(m / 60), min = m % 60;
-              return min === 0 ? `${h}h` : `${h}h ${min}m`;
-            };
-            const total = s?.totalSleep;
-            const stageTotal = total || ((s?.deepSleep ?? 0) + (s?.remSleep ?? 0) + (s?.lightSleep ?? 0) + (s?.awakeDuration ?? 0));
-            return (
-              <Link href="/habits">
-                <Card className="cursor-pointer hover:shadow-md transition-shadow border-neutral-200 dark:border-neutral-700">
-                  <CardContent className="py-4 px-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-2">
-                        <MoonIcon className="w-4 h-4 text-indigo-500" />
-                        <p className="text-sm font-medium">Last Night's Sleep</p>
-                      </div>
-                      {s?.source === 'oura' && (
-                        <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300">Oura</span>
-                      )}
-                    </div>
-
-                    {s ? (
-                      <div className="flex items-center gap-4">
-                        {/* Score ring */}
-                        <div className="relative flex-shrink-0">
-                          <svg width={56} height={56} className="-rotate-90">
-                            <circle cx={28} cy={28} r={20} fill="none" stroke="currentColor" strokeWidth={6} className="text-neutral-200 dark:text-neutral-700" />
-                            <circle cx={28} cy={28} r={20} fill="none" stroke={ringColor} strokeWidth={6}
-                              strokeDasharray={`${score ? (score / 100) * (2 * Math.PI * 20) : 0} ${2 * Math.PI * 20}`}
-                              strokeLinecap="round" />
-                          </svg>
-                          <div className="absolute inset-0 flex flex-col items-center justify-center">
-                            <span className="text-sm font-bold" style={{ color: ringColor }}>{score ?? '—'}</span>
-                          </div>
-                        </div>
-
-                        {/* Stats */}
-                        <div className="flex-1 min-w-0 space-y-1.5">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-semibold" style={{ color: ringColor }}>{scoreLabel || '—'}</span>
-                            {total && <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">{fmtMins(total)}</span>}
-                          </div>
-                          <div className="flex items-center gap-3 text-xs text-neutral-500 flex-wrap">
-                            {s.bedtime && <span>🌙 {s.bedtime}</span>}
-                            {s.wakeTime && <span>☀️ {s.wakeTime}</span>}
-                            {s.hrv != null && <span className="text-rose-500 font-medium">{s.hrv}ms HRV</span>}
-                            {s.restingHeartRate != null && <span className="text-sky-500 font-medium">{s.restingHeartRate}bpm</span>}
-                          </div>
-                          {/* Mini stage bar */}
-                          {stageTotal > 0 && (
-                            <div className="flex h-2 rounded-full overflow-hidden gap-px mt-1">
-                              {(s.deepSleep ?? 0) > 0 && <div className="bg-indigo-600 dark:bg-indigo-500 rounded-l-full" style={{ width: `${((s.deepSleep ?? 0) / stageTotal) * 100}%` }} />}
-                              {(s.remSleep ?? 0) > 0 && <div className="bg-violet-500" style={{ width: `${((s.remSleep ?? 0) / stageTotal) * 100}%` }} />}
-                              {(s.lightSleep ?? 0) > 0 && <div className="bg-sky-400" style={{ width: `${((s.lightSleep ?? 0) / stageTotal) * 100}%` }} />}
-                              {(s.awakeDuration ?? 0) > 0 && <div className="bg-amber-300 rounded-r-full" style={{ width: `${((s.awakeDuration ?? 0) / stageTotal) * 100}%` }} />}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex items-center justify-between text-sm text-neutral-400">
-                        <span>No sleep data</span>
-                        <span className="text-xs text-indigo-500">Log or sync →</span>
-                      </div>
-                    )}
-
-                    {s?.date && (
-                      <p className="text-[10px] text-neutral-400 mt-2">
-                        {new Date(s.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                      </p>
-                    )}
-                  </CardContent>
-                </Card>
-              </Link>
             );
           },
           'quick-log': () => (

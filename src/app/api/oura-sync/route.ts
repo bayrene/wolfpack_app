@@ -54,6 +54,19 @@ export async function POST() {
       ? Math.round((s.total_sleep_duration as number) / 60)
       : undefined;
 
+    // Parse sleep_phase_5_min: count transitions TO '1' (awake) from a non-awake state
+    const sleepPhases = s.sleep_phase_5_min as string ?? undefined;
+    let awakenCount: number | undefined = undefined;
+    if (sleepPhases) {
+      let count = 0;
+      for (let i = 1; i < sleepPhases.length; i++) {
+        if (sleepPhases[i] === '1' && sleepPhases[i - 1] !== '1') {
+          count++;
+        }
+      }
+      awakenCount = count;
+    }
+
     const data = {
       date: day,
       bedtime,
@@ -71,6 +84,8 @@ export async function POST() {
       restingHeartRate: s.lowest_heart_rate as number ?? undefined,
       tempDeviation: s.readiness?.temperature_deviation as number ?? undefined,
       respiratoryRate: s.average_breath as number ?? undefined,
+      sleepPhases,
+      awakenCount,
       source: 'oura',
     };
 
