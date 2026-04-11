@@ -17,14 +17,14 @@ const PROFILES: ProfileCard[] = [
   {
     id: 'me',
     name: 'Rene',
-    subtitle: 'Your dashboard',
+    subtitle: '',
     hoverBorder: 'hover:border-amber-500',
     hoverBg: 'hover:bg-amber-500/10',
   },
   {
     id: 'wife',
     name: 'Cynthia',
-    subtitle: 'Her dashboard',
+    subtitle: '',
     hoverBorder: 'hover:border-pink-500',
     hoverBg: 'hover:bg-pink-500/10',
   },
@@ -86,16 +86,11 @@ function SelectProfileForm() {
             ].join(' ')}
           >
             <span className="text-4xl" aria-hidden="true">
-              👤
+              {profile.id === 'wife' ? '👩' : '👤'}
             </span>
-            <div className="flex flex-col items-center gap-0.5">
-              <span className="text-white font-bold text-base leading-tight">
-                {profile.name}
-              </span>
-              <span className="text-neutral-500 text-xs leading-tight">
-                {profile.subtitle}
-              </span>
-            </div>
+            <span className="text-white font-bold text-base leading-tight">
+              {profile.name}
+            </span>
           </button>
         ))}
       </div>
