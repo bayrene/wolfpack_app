@@ -53,8 +53,6 @@ export async function POST() {
   const mainSleeps = mainSleepsRaw.length > 0 ? mainSleepsRaw : allSleeps;
 
   let upserted = 0;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const debugSleepDays: Record<string, any> = {};
   for (const s of mainSleeps) {
     const day: string = s.day as string;
     const daily = dailyMap[day];
@@ -133,50 +131,6 @@ export async function POST() {
       await db.update(sleepLog).set(updateObj).where(eq(sleepLog.id, existing.id)).run();
     } else {
       await db.insert(sleepLog).values(data).run();
-    }
-
-    // Debug: capture what we're writing for recent days
-    const today = format(new Date(), 'yyyy-MM-dd');
-    const weekAgo = format(subDays(new Date(), 7), 'yyyy-MM-dd');
-    if (day >= weekAgo && day <= today) {
-      // Read back the row to confirm it was written
-      const verifyRow = await db.select().from(sleepLog).where(eq(sleepLog.date, day)).all();
-      const ouraRow = verifyRow.find(r => r.source === 'oura');
-      debugSleepDays[day] = {
-        action: existing ? 'update' : 'insert',
-        existingId: existing?.id,
-        rawApiFields: {
-          total_sleep_duration: s.total_sleep_duration,
-          deep_sleep_duration: s.deep_sleep_duration,
-          rem_sleep_duration: s.rem_sleep_duration,
-          light_sleep_duration: s.light_sleep_duration,
-          efficiency: s.efficiency,
-          average_hrv: s.average_hrv,
-          lowest_heart_rate: s.lowest_heart_rate,
-          bedtime_start: s.bedtime_start,
-          bedtime_end: s.bedtime_end,
-          type: s.type,
-        },
-        parsedData: {
-          totalSleep, bedtime, wakeTime,
-          efficiency: data.efficiency, hrv: data.hrv,
-          restingHeartRate: data.restingHeartRate,
-          deepSleep: data.deepSleep, remSleep: data.remSleep,
-          lightSleep: data.lightSleep,
-        },
-        updateObjKeys: Object.keys(updateObj),
-        dbAfterWrite: ouraRow ? {
-          totalSleep: ouraRow.totalSleep,
-          bedtime: ouraRow.bedtime,
-          wakeTime: ouraRow.wakeTime,
-          efficiency: ouraRow.efficiency,
-          hrv: ouraRow.hrv,
-          restingHeartRate: ouraRow.restingHeartRate,
-          deepSleep: ouraRow.deepSleep,
-          remSleep: ouraRow.remSleep,
-          score: ouraRow.score,
-        } : 'NOT_FOUND',
-      };
     }
 
     upserted++;
@@ -268,6 +222,12 @@ export async function POST() {
   revalidatePath('/sleep');
   revalidatePath('/progress');
 
+  // Build list of days that have daily_sleep score but NO detailed /sleep session
+  const sleepDaysSet = new Set(mainSleeps.map((s: Record<string, unknown>) => s.day as string));
+  const pendingDetailDays = (dailySleepData.data ?? [])
+    .filter((d: Record<string, unknown>) => !sleepDaysSet.has(d.day as string))
+    .map((d: Record<string, unknown>) => d.day as string);
+
   return NextResponse.json({
     synced: upserted,
     readinessUpserted,
@@ -275,8 +235,7 @@ export async function POST() {
     activityUpserted,
     start,
     end,
-    debugSleepDays,
-    mainSleepCount: mainSleeps.length,
-    allSleepCount: allSleeps.length,
+    sleepSessions: mainSleeps.length,
+    pendingDetailDays,
   });
 }
