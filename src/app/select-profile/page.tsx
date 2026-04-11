@@ -23,7 +23,7 @@ const PROFILES: ProfileCard[] = [
   },
   {
     id: 'wife',
-    name: 'Wife',
+    name: 'Cynthia',
     subtitle: 'Her dashboard',
     hoverBorder: 'hover:border-pink-500',
     hoverBg: 'hover:bg-pink-500/10',
