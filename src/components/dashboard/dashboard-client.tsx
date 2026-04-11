@@ -148,10 +148,10 @@ const MICRO_BAR_CONFIG = [
   { key: 'potassium' as const, label: 'Potassium', color: '#06B6D4', unit: 'mg' },
 ];
 
-const CARD_IDS = ['weight', 'oura', 'teeth', 'quick-log', 'nutrition', 'steps', 'water', 'coffee', 'supplements', 'meals'] as const;
+const CARD_IDS = ['oura', 'teeth', 'quick-log', 'nutrition', 'steps', 'water', 'coffee', 'supplements', 'meals'] as const;
 type CardId = typeof CARD_IDS[number];
 const DEFAULT_ORDER: CardId[] = [...CARD_IDS];
-const STORAGE_KEY = 'dashboard-card-order-v12';
+const STORAGE_KEY = 'dashboard-card-order-v13';
 
 function ReorderableCard({ children, id, index, total, onMoveUp, onMoveDown }: {
   children: React.ReactNode;
@@ -620,20 +620,77 @@ export function DashboardClient({
         </div>
       )}
 
-      {/* Prep Day Banner */}
-      {isPrepDay && (
-        <Link href="/prep">
-          <Card className="bg-[#E07A3A]/10 border-[#E07A3A]/30 cursor-pointer hover:bg-[#E07A3A]/15 transition-colors">
-            <CardContent className="flex items-center gap-3 py-4">
-              <ChefHat className="w-6 h-6 text-[#E07A3A]" />
-              <div>
-                <p className="font-semibold text-[#E07A3A]">It&apos;s prep day!</p>
-                <p className="text-sm text-neutral-600 dark:text-neutral-400">Tap here to plan your meal prep session</p>
-              </div>
-            </CardContent>
-          </Card>
-        </Link>
-      )}
+      {/* Prep Day + Weight Row */}
+      {(() => {
+        const weightPoints = stepsHistory.filter(l => l.weightLbs != null).map(l => ({ date: l.date, w: l.weightLbs as number })).sort((a, b) => a.date.localeCompare(b.date));
+        const latest = weightPoints[weightPoints.length - 1] ?? null;
+        const prev = weightPoints.length >= 2 ? weightPoints[weightPoints.length - 2].w : null;
+        const displayWeight = latest?.w ?? null;
+        const change = prev != null && displayWeight != null ? +(displayWeight - prev).toFixed(1) : null;
+        const spark = weightPoints.slice(-10);
+        const sparkMin = spark.length ? Math.min(...spark.map(p => p.w)) - 1 : 140;
+        const sparkMax = spark.length ? Math.max(...spark.map(p => p.w)) + 1 : 160;
+        const sparkH = 32; const sparkW = 80;
+        const toY = (w: number) => sparkH - ((w - sparkMin) / Math.max(sparkMax - sparkMin, 1)) * sparkH;
+        const pts = spark.map((p, i) => `${(i / Math.max(spark.length - 1, 1)) * sparkW},${toY(p.w)}`).join(' ');
+        const weightCard = displayWeight != null ? (
+          <Link href="/progress" className="flex-1">
+            <Card className="h-full hover:bg-neutral-50 dark:hover:bg-neutral-800/60 transition-colors cursor-pointer">
+              <CardContent className="flex items-center justify-between py-4 px-4 h-full">
+                <div>
+                  <p className="text-xs text-neutral-500 font-medium mb-0.5">⚖️ Weight</p>
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="text-xl font-bold">{displayWeight.toFixed(1)}</span>
+                    <span className="text-xs text-neutral-400">lbs</span>
+                  </div>
+                  {change !== null && (
+                    <span className={`text-xs font-semibold ${change > 0 ? 'text-emerald-500' : change < 0 ? 'text-red-400' : 'text-neutral-400'}`}>
+                      {change > 0 ? '+' : ''}{change} lbs
+                    </span>
+                  )}
+                </div>
+                {spark.length >= 2 && (
+                  <svg width={sparkW} height={sparkH} className="opacity-50">
+                    <polyline points={pts} fill="none" stroke="#10b981" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+                    <circle cx={(spark.length - 1) / Math.max(spark.length - 1, 1) * sparkW} cy={toY(spark[spark.length - 1].w)} r={2.5} fill="#10b981" />
+                  </svg>
+                )}
+              </CardContent>
+            </Card>
+          </Link>
+        ) : null;
+
+        if (isPrepDay && weightCard) return (
+          <div className="flex gap-3 items-stretch">
+            <Link href="/prep" className="flex-1">
+              <Card className="h-full bg-[#E07A3A]/10 border-[#E07A3A]/30 cursor-pointer hover:bg-[#E07A3A]/15 transition-colors">
+                <CardContent className="flex items-center gap-3 py-4 px-4 h-full">
+                  <ChefHat className="w-5 h-5 text-[#E07A3A] shrink-0" />
+                  <div>
+                    <p className="font-semibold text-[#E07A3A] text-sm">It&apos;s prep day!</p>
+                    <p className="text-xs text-neutral-500">Tap to plan</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+            {weightCard}
+          </div>
+        );
+        if (isPrepDay) return (
+          <Link href="/prep">
+            <Card className="bg-[#E07A3A]/10 border-[#E07A3A]/30 cursor-pointer hover:bg-[#E07A3A]/15 transition-colors">
+              <CardContent className="flex items-center gap-3 py-4">
+                <ChefHat className="w-6 h-6 text-[#E07A3A]" />
+                <div>
+                  <p className="font-semibold text-[#E07A3A]">It&apos;s prep day!</p>
+                  <p className="text-sm text-neutral-500">Tap here to plan your meal prep session</p>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+        );
+        return weightCard;
+      })()}
 
       {/* Reorderable Cards */}
       <div className="space-y-4">
@@ -1086,61 +1143,6 @@ export function DashboardClient({
               </CardContent>
             </Card>
           ),
-          'weight': () => {
-            const weightPoints = stepsHistory
-              .filter(l => l.weightLbs != null)
-              .map(l => ({ date: l.date, w: l.weightLbs as number }))
-              .sort((a, b) => a.date.localeCompare(b.date));
-            // Also check today's log
-            const todayWeight = stepsHistory.find(l => l.date === selectedDate && l.weightLbs != null)?.weightLbs ?? null;
-            const latest = weightPoints[weightPoints.length - 1] ?? null;
-            const displayWeight = todayWeight ?? latest?.w ?? null;
-            if (displayWeight === null && weightPoints.length === 0) return null;
-            const prev = weightPoints.length >= 2 ? weightPoints[weightPoints.length - 2].w : null;
-            const change = prev != null && displayWeight != null ? +(displayWeight - prev).toFixed(1) : null;
-            // Sparkline: last 14 days
-            const spark = weightPoints.slice(-14);
-            const sparkMin = spark.length ? Math.min(...spark.map(p => p.w)) - 1 : 140;
-            const sparkMax = spark.length ? Math.max(...spark.map(p => p.w)) + 1 : 200;
-            const sparkH = 40; const sparkW = 200;
-            const toY = (w: number) => sparkH - ((w - sparkMin) / (sparkMax - sparkMin)) * sparkH;
-            const pts = spark.map((p, i) => `${(i / Math.max(spark.length - 1, 1)) * sparkW},${toY(p.w)}`).join(' ');
-            return (
-              <Card>
-                <CardContent className="pt-4 pb-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="text-lg">⚖️</span>
-                      <div>
-                        <p className="text-xs text-neutral-500 font-medium">Weight</p>
-                        <div className="flex items-baseline gap-2">
-                          <span className="text-2xl font-bold">{displayWeight?.toFixed(1)}</span>
-                          <span className="text-sm text-neutral-400">lbs</span>
-                          {change !== null && (
-                            <span className={`text-sm font-semibold ${change > 0 ? 'text-emerald-500' : change < 0 ? 'text-red-400' : 'text-neutral-400'}`}>
-                              {change > 0 ? '+' : ''}{change} lbs
-                            </span>
-                          )}
-                        </div>
-                        {latest && <p className="text-[11px] text-neutral-400 mt-0.5">Last recorded {latest.date === selectedDate ? 'today' : latest.date}</p>}
-                      </div>
-                    </div>
-                    {spark.length >= 2 && (
-                      <svg width={sparkW} height={sparkH} className="opacity-60">
-                        <polyline points={pts} fill="none" stroke="#10b981" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-                        {/* Last point dot */}
-                        <circle cx={(spark.length - 1) / Math.max(spark.length - 1, 1) * sparkW} cy={toY(spark[spark.length - 1].w)} r={3} fill="#10b981" />
-                      </svg>
-                    )}
-                  </div>
-                  <div className="mt-3 flex items-center justify-between text-[11px] text-neutral-400">
-                    <span>Goal: gaining</span>
-                    <Link href="/progress" className="text-emerald-500 hover:underline">Full history →</Link>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          },
           'water': () => (
             <Card>
               <CardContent className="py-4">
