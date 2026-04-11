@@ -1,16 +1,14 @@
 'use client';
 
 import React, { useState, useRef, useTransition, useEffect, useCallback } from 'react';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { QuickLogModal } from '@/components/meals/quick-log-modal';
 import {
-  Snowflake,
   UtensilsCrossed,
-  TrendingDown,
   ChefHat,
   Coffee,
   Sun,
@@ -24,8 +22,6 @@ import {
   ChevronDown,
   Calendar,
   Droplets,
-  Sparkles,
-  Loader2,
   Scale,
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
@@ -142,10 +138,10 @@ const MICRO_BAR_CONFIG = [
   { key: 'potassium' as const, label: 'Potassium', color: '#06B6D4', unit: 'mg' },
 ];
 
-const CARD_IDS = ['quick-log', 'nutrition', 'sleep', 'steps', 'water', 'coffee', 'weight', 'meals', 'freezer-spending', 'weekly-digest'] as const;
+const CARD_IDS = ['quick-log', 'nutrition', 'sleep', 'steps', 'water', 'coffee', 'weight', 'meals'] as const;
 type CardId = typeof CARD_IDS[number];
 const DEFAULT_ORDER: CardId[] = [...CARD_IDS];
-const STORAGE_KEY = 'dashboard-card-order-v4';
+const STORAGE_KEY = 'dashboard-card-order-v5';
 
 function ReorderableCard({ children, id, index, total, onMoveUp, onMoveDown }: {
   children: React.ReactNode;
@@ -279,8 +275,6 @@ export function DashboardClient({
   const [quickLogOpen, setQuickLogOpen] = useState(false);
   const [selectedMealType, setSelectedMealType] = useState<string>('breakfast');
   const [steps, setSteps] = useState(todaySteps);
-  const [digest, setDigest] = useState<{ text: string; period: string } | null>(null);
-  const [digestLoading, setDigestLoading] = useState(false);
   const [stepsDate, setStepsDate] = useState(today);
   const [water, setWater] = useState(todayWater);
   const [coffee, setCoffee] = useState(todayCoffee);
@@ -319,8 +313,6 @@ export function DashboardClient({
       return next;
     });
   }, []);
-
-  const savings = fastFoodBaseline - weeklySpend;
 
   const handleQuickLog = (mealType: string) => {
     setSelectedMealType(mealType);
@@ -755,27 +747,62 @@ export function DashboardClient({
               }))
               .sort((a, b) => a.date.localeCompare(b.date));
 
+            // Thin out labels: only show one per ~14 days for readability
+            const tickIndices = new Set<number>();
+            if (weightPoints.length > 0) {
+              tickIndices.add(0);
+              tickIndices.add(weightPoints.length - 1);
+              let lastTickDate = weightPoints[0].date;
+              for (let i = 1; i < weightPoints.length - 1; i++) {
+                const msGap = new Date(weightPoints[i].date + 'T00:00:00').getTime() - new Date(lastTickDate + 'T00:00:00').getTime();
+                if (msGap >= 14 * 24 * 60 * 60 * 1000) {
+                  tickIndices.add(i);
+                  lastTickDate = weightPoints[i].date;
+                }
+              }
+            }
+
             const lastRecorded = weightPoints.length > 0 ? weightPoints[weightPoints.length - 1] : null;
             const displayWeight = todayWeight ?? lastRecorded?.weight ?? null;
             const isLastRecorded = todayWeight == null && lastRecorded != null;
 
             const weights = weightPoints.map((p) => p.weight);
-            const minW = weights.length > 0 ? Math.floor(Math.min(...weights)) - 2 : 0;
-            const maxW = weights.length > 0 ? Math.ceil(Math.max(...weights)) + 2 : 300;
+            const minW = weights.length > 0 ? Math.floor(Math.min(...weights)) - 3 : 0;
+            const maxW = weights.length > 0 ? Math.ceil(Math.max(...weights)) + 3 : 300;
+
+            // Stats
+            const firstWeight = weightPoints.length > 0 ? weightPoints[0].weight : null;
+            const lowestWeight = weights.length > 0 ? Math.min(...weights) : null;
+            const changeFromStart = displayWeight != null && firstWeight != null ? displayWeight - firstWeight : null;
+
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+            const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split('T')[0];
+            const pointsIn30Days = weightPoints.filter((p) => p.date >= thirtyDaysAgoStr);
+            const change30d = pointsIn30Days.length >= 2 && displayWeight != null
+              ? displayWeight - pointsIn30Days[0].weight
+              : null;
+
+            const fmtChange = (n: number | null) => {
+              if (n == null) return null;
+              const sign = n < 0 ? '' : '+';
+              return `${sign}${n.toFixed(1)} lbs`;
+            };
 
             return (
-              <Card>
-                <CardContent className="py-4 px-4">
-                  <div className="flex items-center justify-between mb-3">
+              <Card className="col-span-full">
+                <CardContent className="py-5 px-5">
+                  {/* Header row */}
+                  <div className="flex items-start justify-between mb-4">
                     <div className="flex items-center gap-2">
-                      <Scale className="w-4 h-4 text-[#F59E0B]" />
-                      <p className="text-sm font-medium">Weight</p>
+                      <Scale className="w-5 h-5 text-[#F59E0B]" />
+                      <p className="text-base font-semibold">Weight Tracking</p>
                     </div>
                     {displayWeight != null && (
                       <div className="text-right">
-                        <p className="text-lg font-bold text-[#F59E0B]">{displayWeight.toFixed(1)} lbs</p>
+                        <p className="text-4xl font-bold text-[#F59E0B] leading-none">{displayWeight.toFixed(1)}<span className="text-lg font-medium text-neutral-400 ml-1">lbs</span></p>
                         {isLastRecorded && lastRecorded && (
-                          <p className="text-[10px] text-neutral-400">
+                          <p className="text-[10px] text-neutral-400 mt-1">
                             Last recorded · {new Date(lastRecorded.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                           </p>
                         )}
@@ -786,24 +813,59 @@ export function DashboardClient({
                     )}
                   </div>
 
+                  {/* Stat pills */}
+                  {weightPoints.length > 1 && (
+                    <div className="flex flex-wrap gap-3 mb-4">
+                      {changeFromStart != null && (
+                        <div className="flex flex-col bg-neutral-100 dark:bg-neutral-800 rounded-xl px-4 py-2 min-w-[90px]">
+                          <span className="text-[10px] uppercase tracking-wide text-neutral-500 mb-0.5">Since start</span>
+                          <span className={`text-sm font-bold ${changeFromStart < 0 ? 'text-emerald-500' : changeFromStart > 0 ? 'text-rose-500' : 'text-neutral-400'}`}>
+                            {fmtChange(changeFromStart)}
+                          </span>
+                        </div>
+                      )}
+                      {change30d != null && (
+                        <div className="flex flex-col bg-neutral-100 dark:bg-neutral-800 rounded-xl px-4 py-2 min-w-[90px]">
+                          <span className="text-[10px] uppercase tracking-wide text-neutral-500 mb-0.5">Last 30 days</span>
+                          <span className={`text-sm font-bold ${change30d < 0 ? 'text-emerald-500' : change30d > 0 ? 'text-rose-500' : 'text-neutral-400'}`}>
+                            {fmtChange(change30d)}
+                          </span>
+                        </div>
+                      )}
+                      {lowestWeight != null && (
+                        <div className="flex flex-col bg-neutral-100 dark:bg-neutral-800 rounded-xl px-4 py-2 min-w-[90px]">
+                          <span className="text-[10px] uppercase tracking-wide text-neutral-500 mb-0.5">All-time low</span>
+                          <span className="text-sm font-bold text-[#F59E0B]">{lowestWeight.toFixed(1)} lbs</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {weightPoints.length > 1 ? (
-                    <div className="mt-2" style={{ height: 200 }}>
+                    <div style={{ height: 320 }}>
                       <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={weightPoints} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
+                        <AreaChart data={weightPoints} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
+                          <defs>
+                            <linearGradient id="weightGrad" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#F59E0B" stopOpacity={0.25} />
+                              <stop offset="95%" stopColor="#F59E0B" stopOpacity={0} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(120,120,120,0.12)" vertical={false} />
                           <XAxis
                             dataKey="label"
-                            tick={{ fontSize: 10, fill: '#6b7280' }}
+                            tick={{ fontSize: 11, fill: '#6b7280' }}
                             tickLine={false}
                             axisLine={false}
-                            interval="preserveStartEnd"
+                            tickFormatter={(_value, index) => tickIndices.has(index) ? _value : ''}
+                            interval={0}
                           />
                           <YAxis
                             domain={[minW, maxW]}
-                            tick={{ fontSize: 10, fill: '#6b7280' }}
+                            tick={{ fontSize: 11, fill: '#6b7280' }}
                             tickLine={false}
                             axisLine={false}
-                            width={48}
+                            width={44}
                             tickFormatter={(v: number) => `${v}`}
                           />
                           <Tooltip
@@ -818,15 +880,16 @@ export function DashboardClient({
                             formatter={(value: any) => [typeof value === 'number' ? `${value.toFixed(1)} lbs` : `${value} lbs`, 'Weight']}
                             labelStyle={{ color: '#9ca3af', marginBottom: 2 }}
                           />
-                          <Line
+                          <Area
                             type="monotone"
                             dataKey="weight"
                             stroke="#F59E0B"
-                            strokeWidth={2}
-                            dot={{ r: 3, fill: '#F59E0B', strokeWidth: 0 }}
+                            strokeWidth={2.5}
+                            fill="url(#weightGrad)"
+                            dot={false}
                             activeDot={{ r: 5, fill: '#F59E0B', strokeWidth: 0 }}
                           />
-                        </LineChart>
+                        </AreaChart>
                       </ResponsiveContainer>
                     </div>
                   ) : weightPoints.length === 1 ? (
@@ -864,146 +927,6 @@ export function DashboardClient({
                 </CardContent>
               </Card>
             ) : null
-          ),
-          'freezer-spending': () => (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Snowflake className="w-4 h-4 text-blue-500" />
-                    Freezer Status
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {freezerData.length === 0 ? (
-                    <p className="text-sm text-neutral-500">Freezer is empty. Time to meal prep!</p>
-                  ) : (
-                    <div className="space-y-3">
-                      {freezerData.map((item) => (
-                        <div key={item.id} className="flex items-center justify-between">
-                          <div>
-                            <p className="text-sm font-medium">{item.recipeName}</p>
-                            <p className="text-xs text-neutral-500">{item.quantity} servings</p>
-                          </div>
-                          <Badge
-                            variant={
-                              item.daysRemaining < 7 ? 'destructive' :
-                              item.daysRemaining < 14 ? 'warning' :
-                              'success'
-                            }
-                          >
-                            {item.daysRemaining < 0 ? 'Expired' :
-                             item.daysRemaining === 0 ? 'Today' :
-                             `${item.daysRemaining}d left`}
-                          </Badge>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <Link href="/freezer" className="text-sm text-[#E07A3A] hover:underline mt-3 block">
-                    View freezer inventory →
-                  </Link>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <TrendingDown className="w-4 h-4 text-[#3A8A5C]" />
-                    Weekly Spending
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-end">
-                      <div>
-                        <p className="text-3xl font-bold text-[#3A8A5C]">{formatCurrency(weeklySpend)}</p>
-                        <p className="text-xs text-neutral-500">meal prep this week</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm text-neutral-500 line-through">{formatCurrency(fastFoodBaseline)}</p>
-                        <p className="text-xs text-neutral-500">fast food estimate</p>
-                      </div>
-                    </div>
-                    {savings > 0 && (
-                      <div className="bg-[#3A8A5C]/10 rounded-lg p-3 text-center">
-                        <p className="text-lg font-bold text-[#3A8A5C]">
-                          You&apos;re saving {formatCurrency(savings)} this week!
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          ),
-          'weekly-digest': () => (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-violet-500" />
-                  Weekly AI Digest
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {digest ? (
-                  <>
-                    <p className="text-xs text-neutral-400">{digest.period}</p>
-                    <div className="text-sm text-neutral-700 dark:text-neutral-300 whitespace-pre-wrap leading-relaxed">
-                      {digest.text}
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={async () => {
-                        setDigestLoading(true);
-                        setDigest(null);
-                        try {
-                          const res = await fetch('/api/weekly-digest');
-                          const data = await res.json();
-                          if (!res.ok) throw new Error(data.error ?? 'Failed');
-                          setDigest({ text: data.digest, period: `${data.period.start} → ${data.period.end}` });
-                        } catch (err: unknown) {
-                          toast.error(err instanceof Error ? err.message : 'Digest failed');
-                        } finally {
-                          setDigestLoading(false);
-                        }
-                      }}
-                      disabled={digestLoading}
-                      className="text-violet-600 border-violet-200 hover:bg-violet-50"
-                    >
-                      {digestLoading ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Generating…</> : 'Regenerate'}
-                    </Button>
-                  </>
-                ) : (
-                  <div className="flex flex-col items-start gap-3">
-                    <p className="text-sm text-neutral-500">
-                      Get a personalized summary of your last 7 days — nutrition, sleep, steps, and habits.
-                    </p>
-                    <Button
-                      onClick={async () => {
-                        setDigestLoading(true);
-                        try {
-                          const res = await fetch('/api/weekly-digest');
-                          const data = await res.json();
-                          if (!res.ok) throw new Error(data.error ?? 'Failed');
-                          setDigest({ text: data.digest, period: `${data.period.start} → ${data.period.end}` });
-                        } catch (err: unknown) {
-                          toast.error(err instanceof Error ? err.message : 'Digest failed');
-                        } finally {
-                          setDigestLoading(false);
-                        }
-                      }}
-                      disabled={digestLoading}
-                      size="sm"
-                      className="bg-violet-600 hover:bg-violet-700 text-white"
-                    >
-                      {digestLoading ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Generating…</> : <><Sparkles className="w-3.5 h-3.5 mr-1.5" />Generate Digest</>}
-                    </Button>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
           ),
         };
 
