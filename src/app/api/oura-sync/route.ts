@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/db';
-import { sleepLog, ouraDaily } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+import { sleepLog, ouraDaily, dailyLog } from '@/db/schema';
+import { eq, and } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { format, subDays } from 'date-fns';
 
@@ -200,7 +200,7 @@ export async function POST() {
     stressUpserted++;
   }
 
-  // Upsert activity score + steps into ouraDaily, and sync steps → dailyLog
+  // Upsert activity score into ouraDaily + sync steps → dailyLog
   let activityUpserted = 0;
   for (const a of activityData.data ?? []) {
     const day: string = a.day as string;
@@ -213,8 +213,24 @@ export async function POST() {
     } else {
       await db.insert(ouraDaily).values({ date: day, ...activityPayload }).run();
     }
-    activityUpserted++;
 
+    // Sync Oura steps → dailyLog (update only if Oura has MORE steps than current value)
+    const ouraSteps = a.steps as number | null;
+    if (ouraSteps != null && ouraSteps > 0) {
+      const dailyRow = await db.select().from(dailyLog)
+        .where(and(eq(dailyLog.date, day), eq(dailyLog.person, 'me')))
+        .get();
+      if (dailyRow) {
+        // Only update if Oura has more steps (Health Auto Export may have stale data)
+        if (ouraSteps > (dailyRow.steps ?? 0)) {
+          await db.update(dailyLog).set({ steps: ouraSteps }).where(eq(dailyLog.id, dailyRow.id)).run();
+        }
+      } else {
+        await db.insert(dailyLog).values({ date: day, person: 'me', steps: ouraSteps }).run();
+      }
+    }
+
+    activityUpserted++;
   }
 
   revalidatePath('/');
