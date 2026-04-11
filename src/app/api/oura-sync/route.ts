@@ -100,14 +100,34 @@ export async function POST() {
       source: 'oura',
     };
 
-    // Upsert: delete existing entry for this day from Oura then re-insert
+    // Upsert: build explicit update object to avoid Drizzle/Turso spread bug
     const allForDay = await db.select().from(sleepLog)
       .where(eq(sleepLog.date, day))
       .all();
     const existing = allForDay.find(r => r.source === 'oura');
 
     if (existing) {
-      await db.update(sleepLog).set(data).where(eq(sleepLog.id, existing.id)).run();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const updateObj: Record<string, any> = {};
+      if (data.bedtime !== undefined) updateObj.bedtime = data.bedtime;
+      if (data.wakeTime !== undefined) updateObj.wakeTime = data.wakeTime;
+      if (data.totalSleep !== undefined) updateObj.totalSleep = data.totalSleep;
+      if (data.score !== undefined) updateObj.score = data.score;
+      if (data.efficiency !== undefined) updateObj.efficiency = data.efficiency;
+      if (data.latency !== undefined) updateObj.latency = data.latency;
+      if (data.remSleep !== undefined) updateObj.remSleep = data.remSleep;
+      if (data.deepSleep !== undefined) updateObj.deepSleep = data.deepSleep;
+      if (data.lightSleep !== undefined) updateObj.lightSleep = data.lightSleep;
+      if (data.awakeDuration !== undefined) updateObj.awakeDuration = data.awakeDuration;
+      if (data.restfulness !== undefined) updateObj.restfulness = data.restfulness;
+      if (data.hrv !== undefined) updateObj.hrv = data.hrv;
+      if (data.restingHeartRate !== undefined) updateObj.restingHeartRate = data.restingHeartRate;
+      if (data.tempDeviation !== undefined) updateObj.tempDeviation = data.tempDeviation;
+      if (data.respiratoryRate !== undefined) updateObj.respiratoryRate = data.respiratoryRate;
+      if (data.sleepPhases !== undefined) updateObj.sleepPhases = data.sleepPhases;
+      if (data.awakenCount !== undefined) updateObj.awakenCount = data.awakenCount;
+      updateObj.source = 'oura';
+      await db.update(sleepLog).set(updateObj).where(eq(sleepLog.id, existing.id)).run();
     } else {
       await db.insert(sleepLog).values(data).run();
     }
