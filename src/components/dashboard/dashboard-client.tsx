@@ -564,7 +564,7 @@ export function DashboardClient({
             </h1>
             <p className="text-neutral-500 dark:text-neutral-400 text-sm mt-1">
               {now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
-              {' · '}{age} yrs · {heightFt}&apos;{heightInRem}&quot; · {weightLbs} lbs · BMI {bmi.toFixed(1)}
+              {' · '}{age} yrs · {heightFt}&apos;{heightInRem}&quot;
             </p>
           </div>
         );
