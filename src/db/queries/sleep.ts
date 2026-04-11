@@ -9,6 +9,10 @@ export async function getAllSleepLogs() {
   return db.select().from(sleepLog).orderBy(desc(sleepLog.date)).all();
 }
 
+export async function getLatestSleepLog() {
+  return db.select().from(sleepLog).orderBy(desc(sleepLog.date)).limit(1).get() ?? null;
+}
+
 export async function getSleepLogsForRange(from: string, to: string) {
   return db.select().from(sleepLog)
     .where(and(gte(sleepLog.date, from), lte(sleepLog.date, to)))

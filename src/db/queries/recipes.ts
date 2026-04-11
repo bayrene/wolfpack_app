@@ -2,7 +2,7 @@
 
 import { db } from '@/db';
 import { recipes, recipeIngredients, ingredients } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 
 export async function getAllRecipes() {
@@ -53,8 +53,59 @@ export async function getRecipeById(id: number) {
 
 export async function getRecipesByIds(ids: number[]) {
   if (ids.length === 0) return [];
-  const results = await Promise.all(ids.map((id) => getRecipeById(id)));
-  return results.filter((r): r is NonNullable<typeof r> => r !== null);
+  const uniqueIds = [...new Set(ids)];
+
+  // Batch: 2 queries total instead of 2*N
+  const [recipeRows, ingredientRows] = await Promise.all([
+    db.select().from(recipes).where(inArray(recipes.id, uniqueIds)).all(),
+    db.select({
+      recipeId: recipeIngredients.recipeId,
+      id: recipeIngredients.id,
+      amount: recipeIngredients.amount,
+      unit: recipeIngredients.unit,
+      ingredient: {
+        id: ingredients.id,
+        name: ingredients.name,
+        defaultUnit: ingredients.defaultUnit,
+        caloriesPerUnit: ingredients.caloriesPerUnit,
+        proteinPerUnit: ingredients.proteinPerUnit,
+        carbsPerUnit: ingredients.carbsPerUnit,
+        fatPerUnit: ingredients.fatPerUnit,
+        sugarPerUnit: ingredients.sugarPerUnit,
+        fiberPerUnit: ingredients.fiberPerUnit,
+        vitaminAPerUnit: ingredients.vitaminAPerUnit,
+        vitaminCPerUnit: ingredients.vitaminCPerUnit,
+        vitaminDPerUnit: ingredients.vitaminDPerUnit,
+        vitaminB12PerUnit: ingredients.vitaminB12PerUnit,
+        ironPerUnit: ingredients.ironPerUnit,
+        zincPerUnit: ingredients.zincPerUnit,
+        calciumPerUnit: ingredients.calciumPerUnit,
+        magnesiumPerUnit: ingredients.magnesiumPerUnit,
+        potassiumPerUnit: ingredients.potassiumPerUnit,
+        category: ingredients.category,
+        avgPrice: ingredients.avgPrice,
+        purchaseUnit: ingredients.purchaseUnit,
+        storePreference: ingredients.storePreference,
+      },
+    })
+      .from(recipeIngredients)
+      .innerJoin(ingredients, eq(recipeIngredients.ingredientId, ingredients.id))
+      .where(inArray(recipeIngredients.recipeId, uniqueIds))
+      .all(),
+  ]);
+
+  // Group ingredients by recipeId
+  const ingsByRecipe = new Map<number, typeof ingredientRows>();
+  for (const row of ingredientRows) {
+    const list = ingsByRecipe.get(row.recipeId) ?? [];
+    list.push(row);
+    ingsByRecipe.set(row.recipeId, list);
+  }
+
+  return recipeRows.map(r => ({
+    ...r,
+    ingredients: ingsByRecipe.get(r.id) ?? [],
+  }));
 }
 
 export async function getRecipesByCategory(category: 'breakfast' | 'lunch' | 'dinner' | 'snack') {

@@ -1,10 +1,10 @@
 import { getMealsForDate, getWeeklySpending } from '@/db/queries/meals';
 import { getFreezerInventory } from '@/db/queries/freezer';
-import { getAllRecipes, getRecipeById } from '@/db/queries/recipes';
+import { getAllRecipes, getRecipesByIds } from '@/db/queries/recipes';
 import { getDailyLog, getDailyLogsForRange } from '@/db/queries/daily-log';
 import { getSupplementLogs, getActiveSupplements } from '@/db/queries/supplements';
 import { getUserSettings } from '@/db/queries/user-settings';
-import { getAllSleepLogs } from '@/db/queries/sleep';
+import { getLatestSleepLog } from '@/db/queries/sleep';
 import { getOuraDaily, getOuraHistory, getSleepLog, getSleepHistory } from '@/db/queries/oura';
 import { getDentalLogsForDate } from '@/db/queries/dental';
 import { todayISO, daysUntil } from '@/lib/utils';
@@ -34,7 +34,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const selectedDateObj = new Date(selectedDate + 'T00:00:00');
   const thirtyDaysAgo = format(new Date(selectedDateObj.getTime() - 30 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd');
 
-  const [todayMeals, freezerItems, allRecipes, weeklySpend, todayStepsLog, todaySupplements, activeSupplements, settings, sleepLogs, stepsHistory, ouraToday, sleepToday, ouraHistory, sleepHistory, dentalToday] = await Promise.all([
+  const [todayMeals, freezerItems, allRecipes, weeklySpend, todayStepsLog, todaySupplements, activeSupplements, settings, latestSleep, stepsHistory, ouraToday, sleepToday, ouraHistory, sleepHistory, dentalToday] = await Promise.all([
     getMealsForDate(selectedDate),
     getFreezerInventory(),
     getAllRecipes(),
@@ -43,7 +43,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     getSupplementLogs(selectedDate),
     getActiveSupplements(),
     getUserSettings(),
-    getAllSleepLogs(),
+    getLatestSleepLog(),
     getDailyLogsForRange(thirtyDaysAgo, selectedDate, 'me'),
     getOuraDaily(selectedDate),
     getSleepLog(selectedDate),
@@ -78,8 +78,43 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   };
   const fastFoodBaseline = settings.fastFoodWeeklyBaseline ?? 350;
 
-  // Calculate today's nutrition
-  const calculatePersonNutrition = async (person: string) => {
+  // Batch-fetch all recipe details in 2 queries instead of 2*N
+  const recipeIds = [...new Set(todayMeals.filter(m => m.recipe).map(m => m.recipe!.id))];
+  const recipeDetails = await getRecipesByIds(recipeIds);
+  const recipeDetailMap = new Map(recipeDetails.map(r => [r.id, r]));
+
+  // Helper: compute nutrition from a recipe detail's ingredients
+  const computeRecipeNutrition = (rd: typeof recipeDetails[number], recipeServings: number, consumed: number) => {
+    let tc = 0, tp = 0, tca = 0, tf = 0, tSugar = 0;
+    let tVitA = 0, tVitC = 0, tVitD = 0, tVitB12 = 0;
+    let tIron = 0, tZinc = 0, tCalcium = 0, tMag = 0, tPot = 0;
+    for (const ri of rd.ingredients) {
+      tc += ri.ingredient.caloriesPerUnit * ri.amount;
+      tp += ri.ingredient.proteinPerUnit * ri.amount;
+      tca += ri.ingredient.carbsPerUnit * ri.amount;
+      tf += ri.ingredient.fatPerUnit * ri.amount;
+      tSugar += (ri.ingredient.sugarPerUnit ?? 0) * ri.amount;
+      tVitA += (ri.ingredient.vitaminAPerUnit ?? 0) * ri.amount;
+      tVitC += (ri.ingredient.vitaminCPerUnit ?? 0) * ri.amount;
+      tVitD += (ri.ingredient.vitaminDPerUnit ?? 0) * ri.amount;
+      tVitB12 += (ri.ingredient.vitaminB12PerUnit ?? 0) * ri.amount;
+      tIron += (ri.ingredient.ironPerUnit ?? 0) * ri.amount;
+      tZinc += (ri.ingredient.zincPerUnit ?? 0) * ri.amount;
+      tCalcium += (ri.ingredient.calciumPerUnit ?? 0) * ri.amount;
+      tMag += (ri.ingredient.magnesiumPerUnit ?? 0) * ri.amount;
+      tPot += (ri.ingredient.potassiumPerUnit ?? 0) * ri.amount;
+    }
+    const rs = recipeServings || 1;
+    const m = consumed / rs;
+    return {
+      calories: tc * m, protein: tp * m, carbs: tca * m, fat: tf * m, sugar: tSugar * m,
+      vitaminA: tVitA * m, vitaminC: tVitC * m, vitaminD: tVitD * m, vitaminB12: tVitB12 * m,
+      iron: tIron * m, zinc: tZinc * m, calcium: tCalcium * m, magnesium: tMag * m, potassium: tPot * m,
+    };
+  };
+
+  // Calculate today's nutrition (no individual DB calls — uses preloaded map)
+  const calculatePersonNutrition = (person: string) => {
     let calories = 0, protein = 0, carbs = 0, fat = 0, sugar = 0;
     let vitaminA = 0, vitaminC = 0, vitaminD = 0, vitaminB12 = 0;
     let iron = 0, zinc = 0, calcium = 0, magnesium = 0, potassium = 0;
@@ -93,36 +128,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         carbs += (meal.customCarbs ?? 0) * servings;
         fat += (meal.customFat ?? 0) * servings;
       } else if (recipe) {
-        const recipeDetail = await getRecipeById(recipe.id);
-        if (recipeDetail) {
-          let tc = 0, tp = 0, tca = 0, tf = 0, tSugar = 0;
-          let tVitA = 0, tVitC = 0, tVitD = 0, tVitB12 = 0;
-          let tIron = 0, tZinc = 0, tCalcium = 0, tMag = 0, tPot = 0;
-          for (const ri of recipeDetail.ingredients) {
-            tc += ri.ingredient.caloriesPerUnit * ri.amount;
-            tp += ri.ingredient.proteinPerUnit * ri.amount;
-            tca += ri.ingredient.carbsPerUnit * ri.amount;
-            tf += ri.ingredient.fatPerUnit * ri.amount;
-            tSugar += (ri.ingredient.sugarPerUnit ?? 0) * ri.amount;
-            tVitA += (ri.ingredient.vitaminAPerUnit ?? 0) * ri.amount;
-            tVitC += (ri.ingredient.vitaminCPerUnit ?? 0) * ri.amount;
-            tVitD += (ri.ingredient.vitaminDPerUnit ?? 0) * ri.amount;
-            tVitB12 += (ri.ingredient.vitaminB12PerUnit ?? 0) * ri.amount;
-            tIron += (ri.ingredient.ironPerUnit ?? 0) * ri.amount;
-            tZinc += (ri.ingredient.zincPerUnit ?? 0) * ri.amount;
-            tCalcium += (ri.ingredient.calciumPerUnit ?? 0) * ri.amount;
-            tMag += (ri.ingredient.magnesiumPerUnit ?? 0) * ri.amount;
-            tPot += (ri.ingredient.potassiumPerUnit ?? 0) * ri.amount;
-          }
-          const rs = recipe.servings ?? 1;
-          calories += (tc / rs) * servings; protein += (tp / rs) * servings;
-          carbs += (tca / rs) * servings; fat += (tf / rs) * servings;
-          sugar += (tSugar / rs) * servings;
-          vitaminA += (tVitA / rs) * servings; vitaminC += (tVitC / rs) * servings;
-          vitaminD += (tVitD / rs) * servings; vitaminB12 += (tVitB12 / rs) * servings;
-          iron += (tIron / rs) * servings; zinc += (tZinc / rs) * servings;
-          calcium += (tCalcium / rs) * servings; magnesium += (tMag / rs) * servings;
-          potassium += (tPot / rs) * servings;
+        const rd = recipeDetailMap.get(recipe.id);
+        if (rd) {
+          const n = computeRecipeNutrition(rd, recipe.servings ?? 1, servings);
+          calories += n.calories; protein += n.protein; carbs += n.carbs; fat += n.fat; sugar += n.sugar;
+          vitaminA += n.vitaminA; vitaminC += n.vitaminC; vitaminD += n.vitaminD; vitaminB12 += n.vitaminB12;
+          iron += n.iron; zinc += n.zinc; calcium += n.calcium; magnesium += n.magnesium; potassium += n.potassium;
         }
       }
     }
@@ -154,7 +165,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     };
   };
 
-  const myNutrition = await calculatePersonNutrition('me');
+  const myNutrition = calculatePersonNutrition('me');
 
   // Upcoming reminders — vet + dental next appointments within 60 days
   const upcomingEvents: UpcomingEvent[] = [];
@@ -223,12 +234,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       todayWater={todayWater}
       todayCoffee={todayCoffee}
       upcomingEvents={upcomingEvents}
-      latestSleepLog={sleepLogs[0] ?? null}
+      latestSleepLog={latestSleep}
       todaySupplements={todaySupplements}
       activeSupplements={activeSupplements}
       stepsHistory={stepsHistory}
       userSettings={{ name: settings.name ?? 'Rene', dob: settings.dob ?? '1993-03-14', heightIn: settings.heightIn ?? 69, weightLbs: settings.weightLbs ?? 150 }}
-      todayMeals={await Promise.all(todayMeals.map(async ({ meal, recipe }) => {
+      todayMeals={todayMeals.map(({ meal, recipe }) => {
         let cal = 0, pro = 0, car = 0, f = 0, sug = 0;
         if (meal.customCalories != null) {
           const sv = meal.servingsConsumed ?? 1;
@@ -237,23 +248,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           car = Math.round((meal.customCarbs ?? 0) * sv);
           f = Math.round((meal.customFat ?? 0) * sv);
         } else if (recipe) {
-          const rd = await getRecipeById(recipe.id);
+          const rd = recipeDetailMap.get(recipe.id);
           if (rd) {
-            let tc = 0, tp = 0, tca = 0, tf = 0, ts = 0;
-            for (const ri of rd.ingredients) {
-              tc += ri.ingredient.caloriesPerUnit * ri.amount;
-              tp += ri.ingredient.proteinPerUnit * ri.amount;
-              tca += ri.ingredient.carbsPerUnit * ri.amount;
-              tf += ri.ingredient.fatPerUnit * ri.amount;
-              ts += (ri.ingredient.sugarPerUnit ?? 0) * ri.amount;
-            }
-            const rs = recipe.servings ?? 1;
-            const sv = meal.servingsConsumed ?? 1;
-            cal = Math.round((tc / rs) * sv);
-            pro = Math.round((tp / rs) * sv);
-            car = Math.round((tca / rs) * sv);
-            f = Math.round((tf / rs) * sv);
-            sug = Math.round((ts / rs) * sv);
+            const n = computeRecipeNutrition(rd, recipe.servings ?? 1, meal.servingsConsumed ?? 1);
+            cal = Math.round(n.calories); pro = Math.round(n.protein);
+            car = Math.round(n.carbs); f = Math.round(n.fat); sug = Math.round(n.sugar);
           }
         }
         return {
@@ -261,7 +260,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           recipeName: recipe?.name ?? meal.customName ?? 'Unknown',
           calories: cal, protein: pro, carbs: car, fat: f, sugar: sug,
         };
-      }))}
+      })}
       ouraToday={ouraToday}
       sleepToday={sleepToday}
       ouraHistory={ouraHistory}
