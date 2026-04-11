@@ -166,8 +166,18 @@ export async function POST(req: Request) {
       .get();
 
     if (existing) {
+      // Build explicit update object — spread can silently drop fields with Turso
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const updateObj: Record<string, any> = {};
+      if (vals.steps !== undefined) updateObj.steps = vals.steps;
+      if (vals.waterOz !== undefined) updateObj.waterOz = vals.waterOz;
+      if (vals.weightLbs !== undefined) updateObj.weightLbs = vals.weightLbs;
+      if (vals.restingHeartRate !== undefined) updateObj.restingHeartRate = vals.restingHeartRate;
+      if (vals.caffeineMg !== undefined) updateObj.caffeineMg = vals.caffeineMg;
+      if (vals.workoutMinutes !== undefined) updateObj.workoutMinutes = vals.workoutMinutes;
+      console.log('[health-sync] updating id', existing.id, 'with', JSON.stringify(updateObj));
       await db.update(dailyLog)
-        .set({ ...vals })
+        .set(updateObj)
         .where(eq(dailyLog.id, existing.id))
         .run();
     } else {
