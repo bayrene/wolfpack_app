@@ -12,11 +12,13 @@ const PUBLIC_PATHS = [
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Allow public paths and static assets
+  // Allow public paths and static assets (images, fonts, etc.)
+  const isStaticAsset = /\.(jpg|jpeg|png|gif|webp|svg|ico|woff2?|ttf|eot|css|js|map)$/i.test(pathname);
   if (
     PUBLIC_PATHS.some((p) => pathname.startsWith(p)) ||
     pathname.startsWith('/_next') ||
-    pathname.startsWith('/favicon')
+    pathname.startsWith('/favicon') ||
+    isStaticAsset
   ) {
     const res = NextResponse.next();
     res.headers.set('x-pathname', pathname);
