@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/db';
-import { dailyLog } from '@/db/schema';
+import { dailyLog, sleepLog } from '@/db/schema';
 import { eq, and, desc } from 'drizzle-orm';
 
 export const dynamic = 'force-dynamic';
@@ -23,7 +23,14 @@ export async function GET(req: Request) {
     .limit(5)
     .all();
 
-  return NextResponse.json({ date, todayRow: rows[0] ?? null, recent });
+  const recentSleep = await db
+    .select({ date: sleepLog.date, source: sleepLog.source, score: sleepLog.score, totalSleep: sleepLog.totalSleep })
+    .from(sleepLog)
+    .orderBy(desc(sleepLog.date))
+    .limit(15)
+    .all();
+
+  return NextResponse.json({ date, todayRow: rows[0] ?? null, recent, recentSleep });
 }
 
 // PATCH /api/debug?date=2026-04-11&steps=150
