@@ -42,8 +42,15 @@ export async function POST() {
     dailyMap[d.day] = { score: d.score, contributors: d.contributors };
   }
 
-  // Only use "long_sleep" periods (period === 0 is the main sleep, not naps)
-  const mainSleeps = (sleepData.data ?? []).filter((s: Record<string, unknown>) => s.period === 0);
+  // Only use main overnight sleep — type=long_sleep (v2 API) or period=0 (older API)
+  // Pick the best sleep per day: prefer long_sleep, fall back to longest duration
+  const allSleeps: Record<string, unknown>[] = sleepData.data ?? [];
+  console.log('[oura-sync] total sleep sessions:', allSleeps.length, allSleeps.map((s: Record<string, unknown>) => `${s.day} type=${s.type} period=${s.period} dur=${s.total_sleep_duration}`).join(' | '));
+  const mainSleepsRaw = allSleeps.filter((s: Record<string, unknown>) =>
+    s.type === 'long_sleep' || s.period === 0
+  );
+  // If still empty, take all (don't filter) — may be using unknown API version
+  const mainSleeps = mainSleepsRaw.length > 0 ? mainSleepsRaw : allSleeps;
 
   let upserted = 0;
   for (const s of mainSleeps) {
