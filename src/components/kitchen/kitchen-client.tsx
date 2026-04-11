@@ -6,7 +6,6 @@ import { Plus, Search, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { GroceryClient } from '@/components/grocery/grocery-client';
 import { FreezerClient } from '@/components/freezer/freezer-client';
-import { PrepClient } from '@/components/prep/prep-client';
 import { RecipeGrid } from '@/components/recipes/recipe-grid';
 import { IngredientsClient } from '@/components/ingredients/ingredients-client';
 import { Input } from '@/components/ui/input';
@@ -57,14 +56,13 @@ interface PriceWithIngredient {
   ingredient: { id: number; name: string; category: string };
 }
 
-type Tab = 'recipes' | 'ingredients' | 'grocery' | 'freezer' | 'prep';
+type Tab = 'recipes' | 'ingredients' | 'grocery' | 'freezer';
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'recipes', label: 'Recipes' },
   { key: 'ingredients', label: 'Ingredients' },
   { key: 'grocery', label: 'Grocery' },
   { key: 'freezer', label: 'Freezer' },
-  { key: 'prep', label: 'Prep' },
 ];
 
 const RECIPE_CATEGORIES = ['all', 'breakfast', 'lunch', 'dinner', 'snack'] as const;
@@ -76,8 +74,6 @@ interface Props {
   groceryList: GroceryListData;
   recipes: Recipe[];
   freezerData: FreezerData[];
-  prepRecipes: RecipeWithIngredients[];
-  prepSessions: PrepSession[];
   ingredients: Ingredient[];
   recentPrices: PriceWithIngredient[];
   today: string;
@@ -87,8 +83,6 @@ export function KitchenClient({
   groceryList,
   recipes,
   freezerData,
-  prepRecipes,
-  prepSessions,
   ingredients,
   recentPrices,
   today,
@@ -112,7 +106,6 @@ export function KitchenClient({
     ingredients: `${ingredients.length} ingredients tracked`,
     grocery: 'Shopping list',
     freezer: 'Freezer inventory',
-    prep: 'Meal prep sessions',
   }[activeTab];
 
   return (
@@ -215,14 +208,6 @@ export function KitchenClient({
         />
       )}
 
-      {activeTab === 'prep' && (
-        <PrepClient
-          recipes={prepRecipes}
-          sessions={prepSessions}
-          today={today}
-          embedded
-        />
-      )}
     </div>
   );
 }

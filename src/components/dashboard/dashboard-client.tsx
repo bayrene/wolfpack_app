@@ -295,9 +295,9 @@ export function DashboardClient({
   const stepsInputRef = useRef<HTMLInputElement>(null);
   const waterInputRef = useRef<HTMLInputElement>(null);
   const [cardOrder, setCardOrder] = useState<CardId[]>(DEFAULT_ORDER);
-  // supplementIds that have been toggled on (taken today) — initialized from todaySupplements
-  const [takenSupplementIds, setTakenSupplementIds] = useState<Set<number>>(
-    () => new Set(todaySupplements.map((ts) => ts.supplement.id)),
+  // supplement doses taken today — initialized from todaySupplements actual logged dose
+  const [supplementDoses, setSupplementDoses] = useState<Map<number, number>>(
+    () => new Map(todaySupplements.map((ts) => [ts.supplement.id, ts.log.dose ?? ts.supplement.defaultDose ?? 1])),
   );
 
   useEffect(() => {
@@ -403,45 +403,29 @@ export function DashboardClient({
     // For streak we only have todaySupplements (today's data), not historical per-day data
     // Use stepsHistory dates to anchor days, but we don't have daily supp logs per day on the dashboard
     // Simplest approach: streak = 1 if all taken today, else 0
-    const allTakenToday = activeSupplements.every((s) => takenSupplementIds.has(s.id));
+    const allTakenToday = activeSupplements.every((s) => (supplementDoses.get(s.id) ?? 0) > 0);
     return allTakenToday ? 1 : 0;
   };
 
   const stepsStreak = computeStepsStreak();
   const suppStreak = computeSuppStreak();
 
-  const handleSupplementToggle = (suppId: number) => {
-    const isTaken = takenSupplementIds.has(suppId);
-    setTakenSupplementIds((prev) => {
-      const next = new Set(prev);
-      if (isTaken) next.delete(suppId);
-      else next.add(suppId);
-      return next;
-    });
+  const handleSupplementDose = (suppId: number, delta: number) => {
+    const current = supplementDoses.get(suppId) ?? 0;
+    const next = Math.max(0, current + delta);
+    setSupplementDoses((prev) => new Map(prev).set(suppId, next));
     startTransition(async () => {
-      if (isTaken) {
-        // Remove today's log entry for this supplement
-        const entry = todaySupplements.find((ts) => ts.supplement.id === suppId);
-        if (entry) {
-          await deleteSupplementLog(entry.log.id);
-        }
-        toast.success('Supplement unmarked');
+      const existing = todaySupplements.find((ts) => ts.supplement.id === suppId);
+      if (next === 0) {
+        if (existing) await deleteSupplementLog(existing.log.id);
       } else {
-        // Log it
         const supp = activeSupplements.find((s) => s.id === suppId);
-        if (supp) {
-          const now = new Date();
-          const time = now.toTimeString().slice(0, 5);
-          await logSupplement({
-            supplementId: suppId,
-            date: today,
-            time,
-            dose: supp.defaultDose,
-            person: 'me',
-            situation: 'other',
-          });
-          toast.success(`${supp.name} logged`);
+        if (!supp) return;
+        const time = new Date().toTimeString().slice(0, 5);
+        if (existing) {
+          await deleteSupplementLog(existing.log.id);
         }
+        await logSupplement({ supplementId: suppId, date: today, time, dose: next, person: 'me', situation: 'other' });
       }
     });
   };
@@ -1102,39 +1086,23 @@ export function DashboardClient({
                 ) : (
                   <div className="space-y-2">
                     {activeSupplements.map((supp) => {
-                      const taken = takenSupplementIds.has(supp.id);
+                      const dose = supplementDoses.get(supp.id) ?? 0;
                       return (
-                        <button
-                          key={supp.id}
-                          type="button"
-                          onClick={() => handleSupplementToggle(supp.id)}
-                          disabled={isPending}
-                          className={`w-full flex items-center gap-3 py-2.5 px-3 rounded-xl border transition-colors text-left ${
-                            taken
-                              ? 'border-[#7C3AED]/30 bg-[#7C3AED]/5 opacity-60'
-                              : 'border-neutral-200 dark:border-neutral-700 hover:border-[#7C3AED]/40 hover:bg-[#7C3AED]/5'
-                          }`}
-                        >
-                          <div className={`w-5 h-5 rounded-full flex-shrink-0 border-2 flex items-center justify-center transition-colors ${
-                            taken
-                              ? 'bg-[#7C3AED] border-[#7C3AED]'
-                              : 'border-neutral-300 dark:border-neutral-600'
-                          }`}>
-                            {taken && (
-                              <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                              </svg>
-                            )}
-                          </div>
+                        <div key={supp.id} className={`flex items-center gap-3 py-2.5 px-3 rounded-xl border transition-colors ${
+                          dose > 0 ? 'border-[#7C3AED]/30 bg-[#7C3AED]/5' : 'border-neutral-200 dark:border-neutral-700'
+                        }`}>
                           <div className="flex-1 min-w-0">
-                            <p className={`text-sm font-medium truncate ${taken ? 'line-through text-neutral-400' : ''}`}>
-                              {supp.name}
-                            </p>
-                            <p className="text-xs text-neutral-500 truncate">
-                              {supp.defaultDose} {supp.doseUnit}
-                            </p>
+                            <p className="text-sm font-medium truncate">{supp.name}</p>
+                            <p className="text-xs text-neutral-500">{supp.defaultDose} {supp.doseUnit} recommended</p>
                           </div>
-                        </button>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button onClick={() => handleSupplementDose(supp.id, -1)} disabled={dose === 0 || isPending}
+                              className="w-7 h-7 rounded-full border border-neutral-300 dark:border-neutral-600 flex items-center justify-center text-sm font-bold hover:border-[#7C3AED] hover:text-[#7C3AED] disabled:opacity-30 transition-colors">−</button>
+                            <span className={`w-5 text-center text-sm font-semibold ${dose > 0 ? 'text-[#7C3AED]' : 'text-neutral-400'}`}>{dose}</span>
+                            <button onClick={() => handleSupplementDose(supp.id, 1)} disabled={isPending}
+                              className="w-7 h-7 rounded-full border border-neutral-300 dark:border-neutral-600 flex items-center justify-center text-sm font-bold hover:border-[#7C3AED] hover:text-[#7C3AED] disabled:opacity-30 transition-colors">+</button>
+                          </div>
+                        </div>
                       );
                     })}
                   </div>
