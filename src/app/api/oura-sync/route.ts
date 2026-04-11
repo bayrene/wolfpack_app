@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/db';
-import { sleepLog } from '@/db/schema';
+import { sleepLog, ouraDaily } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { format, subDays } from 'date-fns';
@@ -24,9 +24,12 @@ export async function POST() {
   const end = format(new Date(), 'yyyy-MM-dd');
   const start = format(subDays(new Date(), 90), 'yyyy-MM-dd');
 
-  const [sleepData, dailySleepData] = await Promise.all([
+  const [sleepData, dailySleepData, readinessData, stressData, activityData] = await Promise.all([
     ouraFetch(`/sleep?start_date=${start}&end_date=${end}`, token),
     ouraFetch(`/daily_sleep?start_date=${start}&end_date=${end}`, token),
+    ouraFetch(`/daily_readiness?start_date=${start}&end_date=${end}`, token),
+    ouraFetch(`/daily_stress?start_date=${start}&end_date=${end}`, token),
+    ouraFetch(`/daily_activity?start_date=${start}&end_date=${end}`, token),
   ]);
 
   // Map daily_sleep by day for score + contributors
@@ -85,8 +88,69 @@ export async function POST() {
     upserted++;
   }
 
+  // Upsert readiness into ouraDaily
+  let readinessUpserted = 0;
+  for (const r of readinessData.data ?? []) {
+    const day: string = r.day as string;
+    const readinessPayload = {
+      readinessScore: r.score as number ?? null,
+      readinessContributors: r.contributors ? JSON.stringify(r.contributors) : null,
+    };
+    const existing = await db.select().from(ouraDaily).where(eq(ouraDaily.date, day)).all();
+    if (existing.length > 0) {
+      await db.update(ouraDaily).set(readinessPayload).where(eq(ouraDaily.date, day)).run();
+    } else {
+      await db.insert(ouraDaily).values({ date: day, ...readinessPayload }).run();
+    }
+    readinessUpserted++;
+  }
+
+  // Upsert stress into ouraDaily
+  let stressUpserted = 0;
+  for (const s of stressData.data ?? []) {
+    const day: string = s.day as string;
+    const stressPayload = {
+      stressScore: s.stress_high != null || s.recovery_high != null
+        ? Math.max(0, Math.round(100 - ((s.stress_high ?? 0) / Math.max((s.stress_high ?? 0) + (s.recovery_high ?? 1), 1)) * 100))
+        : null,
+      stressHigh: s.stress_high != null ? Math.round((s.stress_high as number) / 60) : null,
+      stressRecovery: s.recovery_high != null ? Math.round((s.recovery_high as number) / 60) : null,
+    };
+    const existing = await db.select().from(ouraDaily).where(eq(ouraDaily.date, day)).all();
+    if (existing.length > 0) {
+      await db.update(ouraDaily).set(stressPayload).where(eq(ouraDaily.date, day)).run();
+    } else {
+      await db.insert(ouraDaily).values({ date: day, ...stressPayload }).run();
+    }
+    stressUpserted++;
+  }
+
+  // Upsert activity score into ouraDaily
+  let activityUpserted = 0;
+  for (const a of activityData.data ?? []) {
+    const day: string = a.day as string;
+    const activityPayload = {
+      activityScore: a.score as number ?? null,
+    };
+    const existing = await db.select().from(ouraDaily).where(eq(ouraDaily.date, day)).all();
+    if (existing.length > 0) {
+      await db.update(ouraDaily).set(activityPayload).where(eq(ouraDaily.date, day)).run();
+    } else {
+      await db.insert(ouraDaily).values({ date: day, ...activityPayload }).run();
+    }
+    activityUpserted++;
+  }
+
+  revalidatePath('/');
   revalidatePath('/habits');
   revalidatePath('/sleep');
 
-  return NextResponse.json({ synced: upserted, start, end });
+  return NextResponse.json({
+    synced: upserted,
+    readinessUpserted,
+    stressUpserted,
+    activityUpserted,
+    start,
+    end,
+  });
 }

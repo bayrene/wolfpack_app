@@ -713,3 +713,19 @@ export const sleepLog = sqliteTable('sleep_log', {
 
 export type SleepLog = typeof sleepLog.$inferSelect;
 export type NewSleepLog = typeof sleepLog.$inferInsert;
+
+// ── Oura Daily (readiness + stress + activity — separate from sleep sessions) ─
+export const ouraDaily = sqliteTable('oura_daily', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  date: text('date').notNull().unique(), // YYYY-MM-DD
+  readinessScore: integer('readiness_score'),
+  readinessContributors: text('readiness_contributors'), // JSON string
+  stressScore: integer('stress_score'),
+  stressHigh: integer('stress_high'), // minutes of high stress
+  stressRecovery: integer('stress_recovery'), // minutes of recovery
+  activityScore: integer('activity_score'),
+  timestamp: integer('timestamp', { mode: 'timestamp' }).default(sql`(unixepoch())`),
+});
+
+export type OuraDaily = typeof ouraDaily.$inferSelect;
+export type NewOuraDaily = typeof ouraDaily.$inferInsert;

@@ -28,7 +28,7 @@ import { formatCurrency } from '@/lib/utils';
 import { MEAL_TYPE_LABELS, STEPS_TARGET, WATER_TARGET, COFFEE_LIMIT, CAFFEINE_PER_CUP, USER_PROFILE } from '@/lib/constants';
 import { upsertSteps, upsertWater, upsertCoffee } from '@/db/queries/daily-log';
 import { toast } from 'sonner';
-import type { Recipe, SleepLog, DailyLog } from '@/db/schema';
+import type { Recipe, SleepLog, DailyLog, OuraDaily } from '@/db/schema';
 import Link from 'next/link';
 
 interface NutritionData {
@@ -109,6 +109,9 @@ interface Props {
   userSettings?: UserSettings;
   weightHistory?: DailyLog[];
   todayWeight?: number | null;
+  ouraToday?: OuraDaily | null;
+  sleepToday?: SleepLog | null;
+  ouraHistory?: OuraDaily[];
   todayMeals: Array<{
     id: number;
     date: string;
@@ -138,10 +141,10 @@ const MICRO_BAR_CONFIG = [
   { key: 'potassium' as const, label: 'Potassium', color: '#06B6D4', unit: 'mg' },
 ];
 
-const CARD_IDS = ['quick-log', 'nutrition', 'sleep', 'steps', 'water', 'coffee', 'weight', 'meals'] as const;
+const CARD_IDS = ['oura', 'quick-log', 'nutrition', 'sleep', 'steps', 'water', 'coffee', 'weight', 'meals'] as const;
 type CardId = typeof CARD_IDS[number];
 const DEFAULT_ORDER: CardId[] = [...CARD_IDS];
-const STORAGE_KEY = 'dashboard-card-order-v5';
+const STORAGE_KEY = 'dashboard-card-order-v6';
 
 function ReorderableCard({ children, id, index, total, onMoveUp, onMoveDown }: {
   children: React.ReactNode;
@@ -271,6 +274,9 @@ export function DashboardClient({
   userSettings,
   weightHistory = [],
   todayWeight = null,
+  ouraToday = null,
+  sleepToday = null,
+  ouraHistory = [],
 }: Props) {
   const [quickLogOpen, setQuickLogOpen] = useState(false);
   const [selectedMealType, setSelectedMealType] = useState<string>('breakfast');
@@ -279,6 +285,7 @@ export function DashboardClient({
   const [water, setWater] = useState(todayWater);
   const [coffee, setCoffee] = useState(todayCoffee);
   const [isPending, startTransition] = useTransition();
+  const [isSyncingOura, setIsSyncingOura] = useState(false);
   const stepsInputRef = useRef<HTMLInputElement>(null);
   const waterInputRef = useRef<HTMLInputElement>(null);
   const [cardOrder, setCardOrder] = useState<CardId[]>(DEFAULT_ORDER);
@@ -449,6 +456,193 @@ export function DashboardClient({
       {/* Reorderable Cards */}
       {cardOrder.map((id, index) => {
         const renderer: Record<CardId, () => React.ReactNode> = {
+          'oura': () => {
+            const hasData = ouraToday || sleepToday;
+            const readiness = ouraToday?.readinessScore ?? null;
+            const activity = ouraToday?.activityScore ?? null;
+            const sleepScore = sleepToday?.score ?? null;
+            const stressScore = ouraToday?.stressScore ?? null;
+            const stressHigh = ouraToday?.stressHigh ?? null;
+            const stressRecovery = ouraToday?.stressRecovery ?? null;
+
+            const fmtMins = (m: number | null | undefined) => {
+              if (m == null) return '—';
+              const h = Math.floor(m / 60);
+              const min = m % 60;
+              return min === 0 ? `${h}h` : `${h}h ${min}m`;
+            };
+
+            const totalSleep = sleepToday?.totalSleep ?? null;
+            const deepSleep = sleepToday?.deepSleep ?? null;
+            const remSleep = sleepToday?.remSleep ?? null;
+            const lightSleep = sleepToday?.lightSleep ?? null;
+            const awakeDuration = sleepToday?.awakeDuration ?? null;
+            const hrv = sleepToday?.hrv ?? null;
+            const rhr = sleepToday?.restingHeartRate ?? null;
+
+            const stageTotal = totalSleep ?? ((deepSleep ?? 0) + (remSleep ?? 0) + (lightSleep ?? 0) + (awakeDuration ?? 0));
+
+            const stressColor = stressScore == null ? '#9ca3af'
+              : stressScore >= 70 ? '#4ade80'
+              : stressScore >= 40 ? '#facc15'
+              : '#f87171';
+            const stressLabel = stressScore == null ? '—'
+              : stressScore >= 70 ? 'Low'
+              : stressScore >= 40 ? 'Medium'
+              : 'High';
+
+            const ScoreRing = ({ score, color, label }: { score: number | null; color: string; label: string }) => {
+              const radius = 32;
+              const circumference = 2 * Math.PI * radius;
+              const progress = score != null ? (score / 100) * circumference : 0;
+              return (
+                <div className="flex flex-col items-center gap-1.5">
+                  <svg width="80" height="80" viewBox="0 0 80 80">
+                    <circle cx="40" cy="40" r={radius} fill="none" stroke="#ffffff10" strokeWidth="6" />
+                    <circle
+                      cx="40" cy="40" r={radius} fill="none" stroke={score != null ? color : '#374151'} strokeWidth="6"
+                      strokeDasharray={`${progress} ${circumference}`}
+                      strokeLinecap="round"
+                      transform="rotate(-90 40 40)"
+                    />
+                    <text x="40" y="45" textAnchor="middle" fill="white" fontSize="16" fontWeight="bold">
+                      {score ?? '—'}
+                    </text>
+                  </svg>
+                  <span className="text-xs font-medium text-neutral-400">{label}</span>
+                </div>
+              );
+            };
+
+            return (
+              <Card className="border-neutral-800 bg-neutral-950">
+                <CardContent className="py-5 px-5">
+                  {/* Header */}
+                  <div className="flex items-center justify-between mb-5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base font-semibold text-white">Oura</span>
+                      <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-indigo-900 text-indigo-300">Ring</span>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        setIsSyncingOura(true);
+                        try {
+                          const res = await fetch('/api/oura-sync', { method: 'POST' });
+                          if (res.ok) {
+                            toast.success('Oura data synced');
+                            // Reload page to reflect new data
+                            window.location.reload();
+                          } else {
+                            toast.error('Sync failed');
+                          }
+                        } catch {
+                          toast.error('Sync failed');
+                        } finally {
+                          setIsSyncingOura(false);
+                        }
+                      }}
+                      disabled={isSyncingOura}
+                      className="text-xs px-3 py-1.5 rounded-lg bg-indigo-900/60 text-indigo-300 hover:bg-indigo-800/60 transition-colors disabled:opacity-50"
+                    >
+                      {isSyncingOura ? 'Syncing…' : 'Sync Now'}
+                    </button>
+                  </div>
+
+                  {!hasData ? (
+                    <div className="flex flex-col items-center justify-center py-8 gap-3">
+                      <p className="text-sm text-neutral-400">No Oura data for today</p>
+                      <p className="text-xs text-neutral-600">Tap &quot;Sync Now&quot; to pull your ring data</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-5">
+                      {/* Score Rings */}
+                      <div className="flex items-start justify-around">
+                        <ScoreRing score={readiness} color="#4ade80" label="Readiness" />
+                        <ScoreRing score={sleepScore} color="#a78bfa" label="Sleep" />
+                        <ScoreRing score={activity} color="#fb923c" label="Activity" />
+                      </div>
+
+                      {/* Sleep Breakdown */}
+                      {sleepToday && (
+                        <div className="bg-neutral-900 rounded-xl p-4 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">Sleep</span>
+                            <span className="text-sm font-semibold text-white">{fmtMins(totalSleep)}</span>
+                          </div>
+
+                          {/* Stage highlights */}
+                          <div className="grid grid-cols-3 gap-2">
+                            <div className="flex flex-col items-center bg-indigo-950/60 rounded-lg py-2.5">
+                              <span className="text-[10px] text-indigo-300 font-medium mb-1">Deep</span>
+                              <span className="text-sm font-bold text-indigo-400">{fmtMins(deepSleep)}</span>
+                            </div>
+                            <div className="flex flex-col items-center bg-violet-950/60 rounded-lg py-2.5">
+                              <span className="text-[10px] text-violet-300 font-medium mb-1">REM</span>
+                              <span className="text-sm font-bold text-violet-400">{fmtMins(remSleep)}</span>
+                            </div>
+                            <div className="flex flex-col items-center bg-sky-950/60 rounded-lg py-2.5">
+                              <span className="text-[10px] text-sky-300 font-medium mb-1">Light</span>
+                              <span className="text-sm font-bold text-sky-400">{fmtMins(lightSleep)}</span>
+                            </div>
+                          </div>
+
+                          {/* Stage proportion bar */}
+                          {stageTotal > 0 && (
+                            <div className="flex h-2 rounded-full overflow-hidden gap-px">
+                              {(deepSleep ?? 0) > 0 && (
+                                <div className="bg-indigo-500 rounded-l-full" style={{ width: `${((deepSleep ?? 0) / stageTotal) * 100}%` }} />
+                              )}
+                              {(remSleep ?? 0) > 0 && (
+                                <div className="bg-violet-500" style={{ width: `${((remSleep ?? 0) / stageTotal) * 100}%` }} />
+                              )}
+                              {(lightSleep ?? 0) > 0 && (
+                                <div className="bg-sky-400" style={{ width: `${((lightSleep ?? 0) / stageTotal) * 100}%` }} />
+                              )}
+                              {(awakeDuration ?? 0) > 0 && (
+                                <div className="bg-amber-400 rounded-r-full" style={{ width: `${((awakeDuration ?? 0) / stageTotal) * 100}%` }} />
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Stress & HRV */}
+                      <div className="grid grid-cols-3 gap-2">
+                        {/* Stress */}
+                        <div className="bg-neutral-900 rounded-xl p-3 flex flex-col gap-1">
+                          <span className="text-[10px] text-neutral-500 uppercase tracking-wide">Stress</span>
+                          <span className="text-lg font-bold" style={{ color: stressColor }}>{stressLabel}</span>
+                          {(stressHigh != null || stressRecovery != null) && (
+                            <span className="text-[10px] text-neutral-500">
+                              {stressHigh != null ? `${stressHigh}m high` : ''}{stressHigh != null && stressRecovery != null ? ' · ' : ''}{stressRecovery != null ? `${stressRecovery}m recovery` : ''}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* HRV */}
+                        <div className="bg-neutral-900 rounded-xl p-3 flex flex-col gap-1">
+                          <span className="text-[10px] text-neutral-500 uppercase tracking-wide">HRV</span>
+                          <span className="text-lg font-bold text-rose-400">
+                            {hrv != null ? hrv : '—'}
+                          </span>
+                          {hrv != null && <span className="text-[10px] text-neutral-500">ms avg</span>}
+                        </div>
+
+                        {/* Resting HR */}
+                        <div className="bg-neutral-900 rounded-xl p-3 flex flex-col gap-1">
+                          <span className="text-[10px] text-neutral-500 uppercase tracking-wide">Rest HR</span>
+                          <span className="text-lg font-bold text-sky-400">
+                            {rhr != null ? rhr : '—'}
+                          </span>
+                          {rhr != null && <span className="text-[10px] text-neutral-500">bpm</span>}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          },
           'sleep': () => {
             const s = latestSleepLog;
             const score = s?.score;

@@ -5,6 +5,7 @@ import { getDailyLog, getDailyLogsForRange } from '@/db/queries/daily-log';
 import { getSupplementLogs } from '@/db/queries/supplements';
 import { getUserSettings } from '@/db/queries/user-settings';
 import { getAllSleepLogs } from '@/db/queries/sleep';
+import { getOuraDaily, getOuraHistory, getSleepLog, getSleepHistory } from '@/db/queries/oura';
 import { todayISO, daysUntil } from '@/lib/utils';
 import { DashboardClient } from '@/components/dashboard/dashboard-client';
 import { startOfWeek, endOfWeek, format, isWeekend } from 'date-fns';
@@ -29,7 +30,9 @@ export default async function DashboardPage() {
   const weekEnd = format(endOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd');
   const ninetyDaysAgo = format(new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd');
 
-  const [todayMeals, freezerItems, allRecipes, weeklySpend, todayStepsLog, todaySupplements, settings, sleepLogs, weightHistory] = await Promise.all([
+  const thirtyDaysAgo = format(new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd');
+
+  const [todayMeals, freezerItems, allRecipes, weeklySpend, todayStepsLog, todaySupplements, settings, sleepLogs, weightHistory, ouraToday, sleepToday, ouraHistory] = await Promise.all([
     getMealsForDate(today),
     getFreezerInventory(),
     getAllRecipes(),
@@ -39,6 +42,9 @@ export default async function DashboardPage() {
     getUserSettings(),
     getAllSleepLogs(),
     getDailyLogsForRange(ninetyDaysAgo, today, 'me'),
+    getOuraDaily(today),
+    getSleepLog(today),
+    getOuraHistory(thirtyDaysAgo, today),
   ]);
 
   const todaySteps = todayStepsLog?.steps ?? 0;
@@ -215,6 +221,9 @@ export default async function DashboardPage() {
         ...meal,
         recipeName: recipe?.name ?? meal.customName ?? 'Unknown',
       }))}
+      ouraToday={ouraToday}
+      sleepToday={sleepToday}
+      ouraHistory={ouraHistory}
     />
   );
 }
