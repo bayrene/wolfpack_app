@@ -1,7 +1,13 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-const PUBLIC_PATHS = ['/login', '/api/auth', '/api/health-sync', '/api/oura-sync'];
+const PUBLIC_PATHS = [
+  '/login',
+  '/select-profile',
+  '/api/auth',
+  '/api/health-sync',
+  '/api/oura-sync',
+];
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -24,6 +30,18 @@ export function proxy(request: NextRequest) {
     const loginUrl = new URL('/login', request.url);
     loginUrl.searchParams.set('from', pathname);
     return NextResponse.redirect(loginUrl);
+  }
+
+  // If authenticated but no profile selected, redirect to profile picker.
+  // Only applies to page routes (not API routes or static assets).
+  const isApiRoute = pathname.startsWith('/api/');
+  if (!isApiRoute) {
+    const profile = request.cookies.get('profile')?.value;
+    if (!profile) {
+      const selectProfileUrl = new URL('/select-profile', request.url);
+      selectProfileUrl.searchParams.set('from', pathname);
+      return NextResponse.redirect(selectProfileUrl);
+    }
   }
 
   // Forward pathname so layout can detect login page

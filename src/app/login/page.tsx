@@ -24,7 +24,7 @@ function LoginForm() {
 
     if (res.ok) {
       const from = searchParams.get('from') ?? '/';
-      window.location.href = from;
+      window.location.href = `/select-profile?from=${encodeURIComponent(from)}`;
     } else {
       setError('Wrong password. Try again.');
       setLoading(false);
