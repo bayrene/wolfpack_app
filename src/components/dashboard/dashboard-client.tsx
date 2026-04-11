@@ -301,7 +301,7 @@ export function DashboardClient({
   const [isSyncingOura, setIsSyncingOura] = useState(false);
   const [localDental, setLocalDental] = useState<DentalLogEntry[]>(dentalToday);
   const [brushModal, setBrushModal] = useState<{ open: boolean; slot: 'am' | 'pm' }>({ open: false, slot: 'am' });
-  const [brushDurMin, setBrushDurMin] = useState('2');
+  const [brushDurSec, setBrushDurSec] = useState('120');
   const [brushExtras, setBrushExtras] = useState<Set<string>>(new Set());
   const [sleepHistoryRange, setSleepHistoryRange] = useState<7 | 30>(7);
   const stepsInputRef = useRef<HTMLInputElement>(null);
@@ -1239,7 +1239,7 @@ export function DashboardClient({
                 setLocalDental(prev => prev.filter(l => l.id !== existingId));
                 startTransition(async () => { await removeDentalLog(existingId); toast.success('Brushing removed'); });
               } else {
-                setBrushDurMin('2');
+                setBrushDurSec('120');
                 setBrushExtras(new Set());
                 setBrushModal({ open: true, slot });
               }
@@ -1275,6 +1275,7 @@ export function DashboardClient({
                       {hasMouthwash && <span className="text-[11px] bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 rounded-full px-2 py-0.5">💧 Mouthwash</span>}
                       {hasFloss && <span className="text-[11px] bg-violet-50 dark:bg-violet-950/40 text-violet-600 dark:text-violet-400 rounded-full px-2 py-0.5">🧵 Floss</span>}
                       {hasWaterFlosser && <span className="text-[11px] bg-sky-50 dark:bg-sky-950/40 text-sky-600 dark:text-sky-400 rounded-full px-2 py-0.5">🚿 Water Flosser</span>}
+                      {localDental.some(l => l.notes?.includes('bleeding')) && <span className="text-[11px] bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 rounded-full px-2 py-0.5">🩸 Bleeding</span>}
                     </div>
                   )}
                 </CardContent>
@@ -1334,31 +1335,33 @@ export function DashboardClient({
             <div className="space-y-2">
               <p className="text-xs text-neutral-500 font-medium">How long did you brush?</p>
               <div className="flex gap-2">
-                {['1', '2', '3', '4'].map(m => (
-                  <button key={m} onClick={() => setBrushDurMin(m)}
-                    className={`flex-1 py-2 rounded-lg text-sm font-semibold border transition-all ${brushDurMin === m ? 'bg-emerald-500 text-white border-emerald-500' : 'border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300'}`}>
-                    {m}m
+                {[{ label: '1m', value: '60' }, { label: '90s', value: '90' }, { label: '2m', value: '120' }].map(({ label, value }) => (
+                  <button key={value} onClick={() => setBrushDurSec(value)}
+                    className={`flex-1 py-2.5 rounded-lg text-sm font-semibold border transition-all ${brushDurSec === value ? 'bg-emerald-500 text-white border-emerald-500' : 'border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300'}`}>
+                    {label}
                   </button>
                 ))}
-                <input type="number" value={brushDurMin} onChange={e => setBrushDurMin(e.target.value)} min="1" max="30"
-                  className="w-16 text-center border rounded-lg text-sm bg-transparent border-neutral-200 dark:border-neutral-700" placeholder="min" />
               </div>
             </div>
 
             {/* Extras */}
             <div className="space-y-2">
-              <p className="text-xs text-neutral-500 font-medium">Did you also use any of these?</p>
+              <p className="text-xs text-neutral-500 font-medium">Anything else?</p>
               <div className="grid grid-cols-2 gap-2">
                 {[
                   { key: 'mouthwash', label: '💧 Mouthwash' },
                   { key: 'floss_pick', label: '🧵 Floss / Pick' },
                   { key: 'water_flosser', label: '🚿 Water Flosser' },
                   { key: 'probiotic', label: '🦠 Oral Probiotic' },
+                  { key: 'bleeding', label: '🩸 Bleeding' },
                 ].map(({ key, label }) => {
                   const active = brushExtras.has(key);
                   return (
                     <button key={key} onClick={() => setBrushExtras(prev => { const n = new Set(prev); active ? n.delete(key) : n.add(key); return n; })}
-                      className={`py-2.5 px-3 rounded-xl text-sm font-medium border-2 transition-all text-left ${active ? 'border-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300' : 'border-neutral-200 dark:border-neutral-700 text-neutral-500'}`}>
+                      className={`py-2.5 px-3 rounded-xl text-sm font-medium border-2 transition-all text-left ${
+                        key === 'bleeding' && active ? 'border-red-400 bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300'
+                        : active ? 'border-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300'
+                        : 'border-neutral-200 dark:border-neutral-700 text-neutral-500'}`}>
                       {label}
                     </button>
                   );
@@ -1372,19 +1375,20 @@ export function DashboardClient({
               onClick={() => {
                 const now = new Date();
                 const time = now.toTimeString().substring(0, 5);
-                const durationSec = Math.round(parseFloat(brushDurMin || '2') * 60);
+                const durationSec = parseInt(brushDurSec || '120');
+                const hasBleeding = brushExtras.has('bleeding');
+                const notes = [hasBleeding ? 'bleeding' : '', brushExtras.has('probiotic') ? 'probiotic' : ''].filter(Boolean).join(', ') || undefined;
                 const tempId = -(Date.now());
-                setLocalDental(prev => [...prev, { id: tempId, date: selectedDate, time, activity: 'brush', duration: durationSec, productId: null, notes: null, createdAt: null }]);
+                setLocalDental(prev => [...prev, { id: tempId, date: selectedDate, time, activity: 'brush', duration: durationSec, productId: null, notes: notes ?? null, createdAt: null }]);
                 setBrushModal(m => ({ ...m, open: false }));
                 startTransition(async () => {
-                  await addDentalLog({ date: selectedDate, time, activity: 'brush', duration: durationSec });
-                  // Log each extra activity
+                  await addDentalLog({ date: selectedDate, time, activity: 'brush', duration: durationSec, notes });
                   for (const extra of brushExtras) {
-                    if (extra === 'probiotic') continue; // notes only
+                    if (extra === 'probiotic' || extra === 'bleeding') continue;
                     await addDentalLog({ date: selectedDate, time, activity: extra as 'mouthwash' | 'floss_pick' | 'water_flosser' });
                   }
                   const extras = Array.from(brushExtras);
-                  toast.success(`${brushModal.slot === 'am' ? 'Morning' : 'Evening'} brush logged${extras.length ? ` + ${extras.length} extra` : ''}`);
+                  toast.success(`${brushModal.slot === 'am' ? 'Morning' : 'Evening'} brush logged${extras.length ? ` + ${extras.join(', ')}` : ''}`);
                 });
               }}
               className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 rounded-xl transition-colors disabled:opacity-50">
