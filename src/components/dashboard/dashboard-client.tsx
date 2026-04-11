@@ -1138,62 +1138,75 @@ export function DashboardClient({
           ),
           'teeth': () => {
             const brushSessions = localDental.filter(l => l.activity === 'brush').sort((a, b) => a.time.localeCompare(b.time));
-            const amBrush = brushSessions.find(l => l.time < '12:00');
-            const pmBrush = brushSessions.find(l => l.time >= '12:00');
+            const amBrushes = brushSessions.filter(l => l.time < '12:00');
+            const pmBrushes = brushSessions.filter(l => l.time >= '12:00');
             const hasMouthwash = localDental.some(l => l.activity === 'mouthwash');
             const hasFloss = localDental.some(l => l.activity === 'floss_pick');
             const hasWaterFlosser = localDental.some(l => l.activity === 'water_flosser');
             const hasExtras = hasMouthwash || hasFloss || hasWaterFlosser || localDental.some(l => l.notes);
-            // A session is "incomplete" if it was auto-synced (has duration but no extras logged at all)
-            const amIncomplete = !!amBrush && !hasExtras;
-            const pmIncomplete = !!pmBrush && !hasExtras;
 
             const fmtDur = (sec: number | null | undefined) => {
               if (!sec) return '';
               const m = Math.floor(sec / 60); const s = sec % 60;
               return m > 0 ? `${m}m ${s > 0 ? s + 's' : ''}`.trim() : `${s}s`;
             };
-            const openBrushModal = (slot: 'am' | 'pm', brush?: typeof amBrush) => {
+            const fmtTime12 = (t: string) => {
+              const [h, m] = t.split(':').map(Number);
+              const ampm = h >= 12 ? 'pm' : 'am';
+              const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+              return `${h12}:${String(m).padStart(2, '0')}${ampm}`;
+            };
+            const openBrushModal = (slot: 'am' | 'pm', brush?: (typeof brushSessions)[0]) => {
               if (brush && hasExtras) {
-                // Already complete — remove
                 setLocalDental(prev => prev.filter(l => l.id !== brush.id));
                 startTransition(async () => { await removeDentalLog(brush.id); toast.success('Brushing removed'); });
               } else if (brush && !hasExtras) {
-                // Auto-synced but no extras — open modal in extras-only mode
                 setBrushDurSec(String(brush.duration ?? 120));
                 setBrushExtras(new Set());
                 setBrushModal({ open: true, slot, extrasOnly: true, existingId: brush.id });
               } else {
-                // No session yet — full log
                 setBrushDurSec('120');
                 setBrushExtras(new Set());
                 setBrushModal({ open: true, slot, extrasOnly: false });
               }
             };
 
-            const renderBrushBtn = (slot: 'am' | 'pm', brush: typeof amBrush, incomplete: boolean) => {
-              const done = !!brush;
+            const renderSlot = (slot: 'am' | 'pm', brushes: typeof brushSessions) => {
               const isAm = slot === 'am';
+              const done = brushes.length > 0;
+              const anyIncomplete = done && !hasExtras;
               const doneColor = isAm
                 ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-950/60'
                 : 'border-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-950/60';
-              const pendingColor = incomplete
+              const pendingColor = anyIncomplete
                 ? 'border-amber-400 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-950/60'
                 : doneColor;
+              // Tapping the slot: if no sessions, open modal to add. If sessions exist, tap the first incomplete one.
+              const primaryBrush = brushes.find(() => true);
               return (
-                <button onClick={() => openBrushModal(slot, brush)} disabled={isPending}
-                  className={`rounded-xl p-4 flex flex-col items-center gap-1.5 border-2 transition-all disabled:opacity-50 hover:scale-[1.02] hover:shadow-md ${done ? pendingColor : 'border-dashed border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800/60'}`}>
-                  {isAm
-                    ? <Sun className={`w-6 h-6 ${done ? (incomplete ? 'text-amber-500' : 'text-emerald-500') : 'text-neutral-300'}`} />
-                    : <MoonIcon className={`w-6 h-6 ${done ? (incomplete ? 'text-amber-500' : 'text-indigo-500') : 'text-neutral-300'}`} />
-                  }
-                  <span className={`text-sm font-semibold ${done ? (incomplete ? 'text-amber-600 dark:text-amber-400' : isAm ? 'text-emerald-600 dark:text-emerald-400' : 'text-indigo-600 dark:text-indigo-400') : 'text-neutral-400'}`}>
-                    {done ? (isAm ? 'Morning ✓' : 'Evening ✓') : (isAm ? 'Morning' : 'Evening')}
-                  </span>
-                  {brush && <span className="text-[11px] text-neutral-500">{brush.time}{brush.duration ? ` · ${fmtDur(brush.duration)}` : ''}</span>}
-                  {incomplete && <span className="text-[10px] text-amber-500 font-medium">+ add routine details</span>}
-                  {done && !incomplete && <span className="text-[10px] text-neutral-400">tap to remove</span>}
-                </button>
+                <div className={`rounded-xl p-4 flex flex-col items-center gap-1.5 border-2 transition-all hover:scale-[1.02] hover:shadow-md ${done ? pendingColor : 'border-dashed border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800/60'}`}>
+                  <button onClick={() => openBrushModal(slot, done ? primaryBrush : undefined)} disabled={isPending} className="flex flex-col items-center gap-1.5 disabled:opacity-50 w-full">
+                    {isAm
+                      ? <Sun className={`w-6 h-6 ${done ? (anyIncomplete ? 'text-amber-500' : 'text-emerald-500') : 'text-neutral-300'}`} />
+                      : <MoonIcon className={`w-6 h-6 ${done ? (anyIncomplete ? 'text-amber-500' : 'text-indigo-500') : 'text-neutral-300'}`} />
+                    }
+                    <span className={`text-sm font-semibold ${done ? (anyIncomplete ? 'text-amber-600 dark:text-amber-400' : isAm ? 'text-emerald-600 dark:text-emerald-400' : 'text-indigo-600 dark:text-indigo-400') : 'text-neutral-400'}`}>
+                      {done ? (isAm ? `Morning ✓` : `Evening ✓`) : (isAm ? 'Morning' : 'Evening')}
+                    </span>
+                  </button>
+                  {/* List all sessions in this slot */}
+                  {brushes.length > 0 && (
+                    <div className="flex flex-col gap-0.5 w-full items-center">
+                      {brushes.map((b) => (
+                        <span key={b.id} className="text-[11px] text-neutral-500">
+                          {fmtTime12(b.time)}{b.duration ? ` · ${fmtDur(b.duration)}` : ''}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {anyIncomplete && <span className="text-[10px] text-amber-500 font-medium">+ add routine details</span>}
+                  {done && !anyIncomplete && <span className="text-[10px] text-neutral-400">tap to remove</span>}
+                </div>
               );
             };
 
@@ -1207,8 +1220,8 @@ export function DashboardClient({
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="grid grid-cols-2 gap-3">
-                    {renderBrushBtn('am', amBrush, amIncomplete)}
-                    {renderBrushBtn('pm', pmBrush, pmIncomplete)}
+                    {renderSlot('am', amBrushes)}
+                    {renderSlot('pm', pmBrushes)}
                   </div>
                   {/* Extras strip */}
                   {hasExtras && (
