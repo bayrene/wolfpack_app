@@ -148,10 +148,10 @@ const MICRO_BAR_CONFIG = [
   { key: 'potassium' as const, label: 'Potassium', color: '#06B6D4', unit: 'mg' },
 ];
 
-const CARD_IDS = ['oura', 'quick-log', 'nutrition', 'steps', 'water', 'coffee', 'supplements', 'teeth', 'meals'] as const;
+const CARD_IDS = ['oura', 'teeth', 'quick-log', 'nutrition', 'steps', 'water', 'coffee', 'supplements', 'meals'] as const;
 type CardId = typeof CARD_IDS[number];
 const DEFAULT_ORDER: CardId[] = [...CARD_IDS];
-const STORAGE_KEY = 'dashboard-card-order-v9';
+const STORAGE_KEY = 'dashboard-card-order-v10';
 
 function ReorderableCard({ children, id, index, total, onMoveUp, onMoveDown }: {
   children: React.ReactNode;
@@ -299,6 +299,7 @@ export function DashboardClient({
   const [coffee, setCoffee] = useState(todayCoffee);
   const [isPending, startTransition] = useTransition();
   const [isSyncingOura, setIsSyncingOura] = useState(false);
+  const [localDental, setLocalDental] = useState<DentalLogEntry[]>(dentalToday);
   const [sleepHistoryRange, setSleepHistoryRange] = useState<7 | 30>(7);
   const stepsInputRef = useRef<HTMLInputElement>(null);
   const waterInputRef = useRef<HTMLInputElement>(null);
@@ -1220,7 +1221,7 @@ export function DashboardClient({
           ),
           'teeth': () => {
             // Brushing sessions for today — sorted by time
-            const brushSessions = dentalToday
+            const brushSessions = localDental
               .filter(l => l.activity === 'brush')
               .sort((a, b) => a.time.localeCompare(b.time));
             const amBrush = brushSessions.find(l => l.time < '12:00');
@@ -1231,8 +1232,10 @@ export function DashboardClient({
               const s = sec % 60;
               return m > 0 ? `${m}m ${s}s` : `${s}s`;
             };
-            const handleBrush = async (slot: 'am' | 'pm', existingId?: number) => {
+            const handleBrush = (slot: 'am' | 'pm', existingId?: number) => {
               if (existingId) {
+                // Optimistically remove from local state immediately
+                setLocalDental(prev => prev.filter(l => l.id !== existingId));
                 startTransition(async () => {
                   await removeDentalLog(existingId);
                   toast.success('Brushing removed');
@@ -1240,6 +1243,9 @@ export function DashboardClient({
               } else {
                 const now = new Date();
                 const time = now.toTimeString().substring(0, 5);
+                // Optimistically add to local state immediately (use temp negative id)
+                const tempId = -(Date.now());
+                setLocalDental(prev => [...prev, { id: tempId, date: selectedDate, time, activity: 'brush', duration: null, productId: null, notes: null, createdAt: null }]);
                 startTransition(async () => {
                   await addDentalLog({ date: selectedDate, time, activity: 'brush' });
                   toast.success(`${slot === 'am' ? 'Morning' : 'Evening'} brush logged`);
@@ -1259,7 +1265,8 @@ export function DashboardClient({
                     {/* AM */}
                     <button
                       onClick={() => handleBrush('am', amBrush?.id)}
-                      className={`rounded-xl p-4 flex flex-col items-center gap-2 border-2 transition-all ${amBrush ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-950/40' : 'border-dashed border-neutral-200 dark:border-neutral-700'}`}
+                      disabled={isPending}
+                      className={`rounded-xl p-4 flex flex-col items-center gap-2 border-2 transition-all disabled:opacity-50 ${amBrush ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-950/40' : 'border-dashed border-neutral-200 dark:border-neutral-700'}`}
                     >
                       <Sun className={`w-6 h-6 ${amBrush ? 'text-emerald-500' : 'text-neutral-300'}`} />
                       <span className={`text-sm font-semibold ${amBrush ? 'text-emerald-600 dark:text-emerald-400' : 'text-neutral-400'}`}>
@@ -1274,7 +1281,8 @@ export function DashboardClient({
                     {/* PM */}
                     <button
                       onClick={() => handleBrush('pm', pmBrush?.id)}
-                      className={`rounded-xl p-4 flex flex-col items-center gap-2 border-2 transition-all ${pmBrush ? 'border-indigo-400 bg-indigo-50 dark:bg-indigo-950/40' : 'border-dashed border-neutral-200 dark:border-neutral-700'}`}
+                      disabled={isPending}
+                      className={`rounded-xl p-4 flex flex-col items-center gap-2 border-2 transition-all disabled:opacity-50 ${pmBrush ? 'border-indigo-400 bg-indigo-50 dark:bg-indigo-950/40' : 'border-dashed border-neutral-200 dark:border-neutral-700'}`}
                     >
                       <MoonIcon className={`w-6 h-6 ${pmBrush ? 'text-indigo-500' : 'text-neutral-300'}`} />
                       <span className={`text-sm font-semibold ${pmBrush ? 'text-indigo-600 dark:text-indigo-400' : 'text-neutral-400'}`}>
