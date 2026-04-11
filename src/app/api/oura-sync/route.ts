@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/db';
-import { sleepLog, ouraDaily } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+import { sleepLog, ouraDaily, dailyLog } from '@/db/schema';
+import { eq, and } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { format, subDays } from 'date-fns';
 
@@ -140,7 +140,7 @@ export async function POST() {
     stressUpserted++;
   }
 
-  // Upsert activity score into ouraDaily
+  // Upsert activity score + steps into ouraDaily, and sync steps → dailyLog
   let activityUpserted = 0;
   for (const a of activityData.data ?? []) {
     const day: string = a.day as string;
@@ -154,11 +154,25 @@ export async function POST() {
       await db.insert(ouraDaily).values({ date: day, ...activityPayload }).run();
     }
     activityUpserted++;
+
+    // Sync Oura's authoritative daily step count → dailyLog (matches Apple Health's Oura integration)
+    if (a.steps != null) {
+      const steps = a.steps as number;
+      const existingLog = await db.select().from(dailyLog)
+        .where(and(eq(dailyLog.date, day), eq(dailyLog.person, 'me')))
+        .get();
+      if (existingLog) {
+        await db.update(dailyLog).set({ steps }).where(eq(dailyLog.id, existingLog.id)).run();
+      } else {
+        await db.insert(dailyLog).values({ date: day, person: 'me', steps }).run();
+      }
+    }
   }
 
   revalidatePath('/');
   revalidatePath('/habits');
   revalidatePath('/sleep');
+  revalidatePath('/progress');
 
   return NextResponse.json({
     synced: upserted,

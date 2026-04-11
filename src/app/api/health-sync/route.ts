@@ -65,11 +65,32 @@ export async function POST(req: Request) {
     console.log('[health-sync] processing metric:', metric.name, '→', nameLower, 'data points:', metric.data?.length);
 
     if (nameLower === 'stepcount' || nameLower === 'step_count' || nameLower === 'steps') {
-      // Sum all minute-by-minute readings per day
+      // Separate Oura-sourced points from device (iPhone/Watch) points
+      // Apple Health consolidates Oura step data differently — prefer device sources
+      const byDateDevice: Record<string, number[]> = {};
+      const byDateOura: Record<string, number[]> = {};
       for (const dp of metric.data) {
         const date = parseDate(dp.date);
+        const src = (dp.source ?? '').toLowerCase();
+        const isOura = src.includes('oura');
+        if (isOura) {
+          byDateOura[date] = byDateOura[date] ?? [];
+          byDateOura[date].push(Math.round(getValue(dp)));
+        } else {
+          byDateDevice[date] = byDateDevice[date] ?? [];
+          byDateDevice[date].push(Math.round(getValue(dp)));
+        }
+      }
+      // Collect all dates across both buckets
+      const allDates = new Set([...Object.keys(byDateDevice), ...Object.keys(byDateOura)]);
+      for (const date of allDates) {
         updates[date] = updates[date] ?? {};
-        updates[date].steps = (updates[date].steps ?? 0) + Math.round(getValue(dp));
+        const deviceVals = byDateDevice[date] ?? [];
+        const ouraVals = byDateOura[date] ?? [];
+        // Prefer device source; fall back to Oura if no device data
+        const vals = deviceVals.length > 0 ? deviceVals : ouraVals;
+        updates[date].steps = vals.reduce((a, b) => a + b, 0);
+        console.log(`[health-sync] steps ${date}: device=${deviceVals.reduce((a,b)=>a+b,0)} (${deviceVals.length}pts) oura=${ouraVals.reduce((a,b)=>a+b,0)} (${ouraVals.length}pts) → using ${deviceVals.length > 0 ? 'device' : 'oura'}: ${updates[date].steps}`);
       }
     }
 
