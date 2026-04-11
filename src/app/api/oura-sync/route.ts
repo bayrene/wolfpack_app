@@ -93,7 +93,7 @@ export async function POST() {
       restfulness: daily?.contributors?.restfulness ?? undefined,
       hrv: s.average_hrv as number ?? undefined,
       restingHeartRate: s.lowest_heart_rate as number ?? undefined,
-      tempDeviation: s.readiness?.temperature_deviation as number ?? undefined,
+      tempDeviation: (s.readiness as Record<string, unknown> | null)?.temperature_deviation as number ?? undefined,
       respiratoryRate: s.average_breath as number ?? undefined,
       sleepPhases,
       awakenCount,
