@@ -15,6 +15,7 @@ import {
   MoreHorizontal,
   X,
   TrendingUp,
+  UserRoundCog,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
@@ -121,6 +122,16 @@ export function MobileNav() {
                 </Link>
               );
             })}
+            <button
+              onClick={() => {
+                document.cookie = 'profile=; path=/; max-age=0';
+                window.location.href = '/select-profile?from=' + encodeURIComponent(pathname);
+              }}
+              className="flex flex-col items-center gap-1 p-3 rounded-xl transition-colors text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+            >
+              <UserRoundCog className="w-5 h-5" />
+              <span className="text-[10px] font-medium text-center leading-tight">Switch Profile</span>
+            </button>
           </div>
         </div>
       )}

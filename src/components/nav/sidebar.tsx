@@ -21,6 +21,7 @@ import {
   Heart,
   Repeat,
   TrendingUp,
+  UserRoundCog,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTheme } from '@/components/theme-provider';
@@ -186,6 +187,16 @@ export function Sidebar() {
         >
           {theme === 'light' ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
           {!collapsed && <span>{theme === 'light' ? 'Dark mode' : 'Light mode'}</span>}
+        </button>
+        <button
+          onClick={() => {
+            document.cookie = 'profile=; path=/; max-age=0';
+            window.location.href = '/select-profile?from=' + encodeURIComponent(pathname);
+          }}
+          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 w-full transition-colors duration-150"
+        >
+          <UserRoundCog className="w-5 h-5" />
+          {!collapsed && <span>Switch Profile</span>}
         </button>
         <button
           onClick={() => setCollapsed(!collapsed)}
