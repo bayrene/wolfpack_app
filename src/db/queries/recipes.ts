@@ -50,6 +50,12 @@ export async function getRecipeById(id: number) {
   return { ...recipe, ingredients: recipeIngs };
 }
 
+export async function getRecipesByIds(ids: number[]) {
+  if (ids.length === 0) return [];
+  const results = await Promise.all(ids.map((id) => getRecipeById(id)));
+  return results.filter((r): r is NonNullable<typeof r> => r !== null);
+}
+
 export async function getRecipesByCategory(category: 'breakfast' | 'lunch' | 'dinner' | 'snack') {
   return db.select().from(recipes).where(eq(recipes.category, category)).all();
 }

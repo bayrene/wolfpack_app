@@ -1,5 +1,5 @@
 import { getMealsForDateRange } from '@/db/queries/meals';
-import { getAllRecipes, getRecipeById } from '@/db/queries/recipes';
+import { getAllRecipes, getRecipesByIds } from '@/db/queries/recipes';
 import { getDailyLogsForRange } from '@/db/queries/daily-log';
 import { MealsWrapper } from '@/components/meals/meals-wrapper';
 import { getUserSettings } from '@/db/queries/user-settings';
@@ -55,6 +55,15 @@ export default async function MealsPage({ searchParams }: { searchParams: { offs
     recipeCostPerServing: recipe?.costPerServing ?? null,
   }));
 
+  // Pre-fetch all needed recipe details in parallel (avoids N+1)
+  const uniqueRecipeIds = [...new Set(
+    allMeals
+      .filter(({ meal, recipe }) => meal.person === 'me' && meal.customCalories == null && recipe != null)
+      .map(({ recipe }) => recipe!.id)
+  )];
+  const recipeDetails = await getRecipesByIds(uniqueRecipeIds);
+  const recipeDetailMap = new Map(recipeDetails.map((r) => [r.id, r]));
+
   // Calculate per-day nutrition for "me"
   const dayMap = new Map<string, DayData>();
 
@@ -78,7 +87,7 @@ export default async function MealsPage({ searchParams }: { searchParams: { offs
       carb = (meal.customCarbs ?? 0) * servings;
       fat = (meal.customFat ?? 0) * servings;
     } else if (recipe) {
-      const detail = await getRecipeById(recipe.id);
+      const detail = recipeDetailMap.get(recipe.id);
       if (detail) {
         let tc = 0, tp = 0, tca = 0, tf = 0;
         let tVitA = 0, tVitC = 0, tVitD = 0, tVitB12 = 0;
