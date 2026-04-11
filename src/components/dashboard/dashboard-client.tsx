@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useTransition, useEffect, useCallback } from 'react';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -25,12 +26,13 @@ import {
   Droplets,
   Sparkles,
   Loader2,
+  Scale,
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { MEAL_TYPE_LABELS, STEPS_TARGET, WATER_TARGET, COFFEE_LIMIT, CAFFEINE_PER_CUP, USER_PROFILE } from '@/lib/constants';
 import { upsertSteps, upsertWater, upsertCoffee } from '@/db/queries/daily-log';
 import { toast } from 'sonner';
-import type { Recipe, SleepLog } from '@/db/schema';
+import type { Recipe, SleepLog, DailyLog } from '@/db/schema';
 import Link from 'next/link';
 
 interface NutritionData {
@@ -109,6 +111,8 @@ interface Props {
   upcomingEvents?: UpcomingEvent[];
   latestSleepLog?: SleepLog | null;
   userSettings?: UserSettings;
+  weightHistory?: DailyLog[];
+  todayWeight?: number | null;
   todayMeals: Array<{
     id: number;
     date: string;
@@ -138,10 +142,10 @@ const MICRO_BAR_CONFIG = [
   { key: 'potassium' as const, label: 'Potassium', color: '#06B6D4', unit: 'mg' },
 ];
 
-const CARD_IDS = ['quick-log', 'nutrition', 'sleep', 'steps', 'water', 'coffee', 'meals', 'freezer-spending', 'weekly-digest'] as const;
+const CARD_IDS = ['quick-log', 'nutrition', 'sleep', 'steps', 'water', 'coffee', 'weight', 'meals', 'freezer-spending', 'weekly-digest'] as const;
 type CardId = typeof CARD_IDS[number];
 const DEFAULT_ORDER: CardId[] = [...CARD_IDS];
-const STORAGE_KEY = 'dashboard-card-order-v3';
+const STORAGE_KEY = 'dashboard-card-order-v4';
 
 function ReorderableCard({ children, id, index, total, onMoveUp, onMoveDown }: {
   children: React.ReactNode;
@@ -269,6 +273,8 @@ export function DashboardClient({
   upcomingEvents = [],
   latestSleepLog,
   userSettings,
+  weightHistory = [],
+  todayWeight = null,
 }: Props) {
   const [quickLogOpen, setQuickLogOpen] = useState(false);
   const [selectedMealType, setSelectedMealType] = useState<string>('breakfast');
@@ -735,6 +741,103 @@ export function DashboardClient({
               </CardContent>
             </Card>
           ),
+          'weight': () => {
+            // Filter to only entries with weight data, sorted oldest→newest for the chart
+            const weightPoints = weightHistory
+              .filter((log) => log.weightLbs != null)
+              .map((log) => ({
+                date: log.date,
+                weight: log.weightLbs as number,
+                label: (() => {
+                  const d = new Date(log.date + 'T00:00:00');
+                  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                })(),
+              }))
+              .sort((a, b) => a.date.localeCompare(b.date));
+
+            const lastRecorded = weightPoints.length > 0 ? weightPoints[weightPoints.length - 1] : null;
+            const displayWeight = todayWeight ?? lastRecorded?.weight ?? null;
+            const isLastRecorded = todayWeight == null && lastRecorded != null;
+
+            const weights = weightPoints.map((p) => p.weight);
+            const minW = weights.length > 0 ? Math.floor(Math.min(...weights)) - 2 : 0;
+            const maxW = weights.length > 0 ? Math.ceil(Math.max(...weights)) + 2 : 300;
+
+            return (
+              <Card>
+                <CardContent className="py-4 px-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <Scale className="w-4 h-4 text-[#F59E0B]" />
+                      <p className="text-sm font-medium">Weight</p>
+                    </div>
+                    {displayWeight != null && (
+                      <div className="text-right">
+                        <p className="text-lg font-bold text-[#F59E0B]">{displayWeight.toFixed(1)} lbs</p>
+                        {isLastRecorded && lastRecorded && (
+                          <p className="text-[10px] text-neutral-400">
+                            Last recorded · {new Date(lastRecorded.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    {displayWeight == null && (
+                      <p className="text-sm text-neutral-400">No data</p>
+                    )}
+                  </div>
+
+                  {weightPoints.length > 1 ? (
+                    <div className="mt-2" style={{ height: 200 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={weightPoints} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
+                          <XAxis
+                            dataKey="label"
+                            tick={{ fontSize: 10, fill: '#6b7280' }}
+                            tickLine={false}
+                            axisLine={false}
+                            interval="preserveStartEnd"
+                          />
+                          <YAxis
+                            domain={[minW, maxW]}
+                            tick={{ fontSize: 10, fill: '#6b7280' }}
+                            tickLine={false}
+                            axisLine={false}
+                            width={48}
+                            tickFormatter={(v: number) => `${v}`}
+                          />
+                          <Tooltip
+                            contentStyle={{
+                              backgroundColor: '#1c1c1e',
+                              border: '1px solid rgba(255,255,255,0.1)',
+                              borderRadius: 8,
+                              fontSize: 12,
+                              color: '#f5f5f5',
+                            }}
+                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                            formatter={(value: any) => [typeof value === 'number' ? `${value.toFixed(1)} lbs` : `${value} lbs`, 'Weight']}
+                            labelStyle={{ color: '#9ca3af', marginBottom: 2 }}
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="weight"
+                            stroke="#F59E0B"
+                            strokeWidth={2}
+                            dot={{ r: 3, fill: '#F59E0B', strokeWidth: 0 }}
+                            activeDot={{ r: 5, fill: '#F59E0B', strokeWidth: 0 }}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  ) : weightPoints.length === 1 ? (
+                    <p className="text-xs text-neutral-400 mt-2">Log more entries to see your trend.</p>
+                  ) : (
+                    <p className="text-xs text-neutral-400 mt-2">No weight entries in the last 90 days.</p>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          },
           'nutrition': () => (
             <NutritionCard title="Today's Nutrition" data={myNutrition} targets={targets} microTargets={microTargets} />
           ),

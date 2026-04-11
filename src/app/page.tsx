@@ -1,7 +1,7 @@
 import { getMealsForDate, getWeeklySpending } from '@/db/queries/meals';
 import { getFreezerInventory } from '@/db/queries/freezer';
 import { getAllRecipes, getRecipeById } from '@/db/queries/recipes';
-import { getDailyLog } from '@/db/queries/daily-log';
+import { getDailyLog, getDailyLogsForRange } from '@/db/queries/daily-log';
 import { getSupplementLogs } from '@/db/queries/supplements';
 import { getUserSettings } from '@/db/queries/user-settings';
 import { getAllSleepLogs } from '@/db/queries/sleep';
@@ -27,8 +27,9 @@ export default async function DashboardPage() {
   const now = new Date();
   const weekStart = format(startOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd');
   const weekEnd = format(endOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd');
+  const ninetyDaysAgo = format(new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd');
 
-  const [todayMeals, freezerItems, allRecipes, weeklySpend, todayStepsLog, todaySupplements, settings, sleepLogs] = await Promise.all([
+  const [todayMeals, freezerItems, allRecipes, weeklySpend, todayStepsLog, todaySupplements, settings, sleepLogs, weightHistory] = await Promise.all([
     getMealsForDate(today),
     getFreezerInventory(),
     getAllRecipes(),
@@ -37,11 +38,13 @@ export default async function DashboardPage() {
     getSupplementLogs(today),
     getUserSettings(),
     getAllSleepLogs(),
+    getDailyLogsForRange(ninetyDaysAgo, today, 'me'),
   ]);
 
   const todaySteps = todayStepsLog?.steps ?? 0;
   const todayWater = todayStepsLog?.waterOz ?? 0;
   const todayCoffee = todayStepsLog?.coffee ?? 0;
+  const todayWeight = todayStepsLog?.weightLbs ?? null;
 
   // Build targets from DB settings
   const targets = {
@@ -205,6 +208,8 @@ export default async function DashboardPage() {
       todayCoffee={todayCoffee}
       upcomingEvents={upcomingEvents}
       latestSleepLog={sleepLogs[0] ?? null}
+      weightHistory={weightHistory}
+      todayWeight={todayWeight}
       userSettings={{ name: settings.name ?? 'Rene', dob: settings.dob ?? '1993-03-14', heightIn: settings.heightIn ?? 69, weightLbs: settings.weightLbs ?? 150 }}
       todayMeals={todayMeals.map(({ meal, recipe }) => ({
         ...meal,
