@@ -482,8 +482,21 @@ export function DashboardClient({
 
   return (
     <div className="space-y-6">
-      {/* Date Navigation Bar */}
-      <div className="flex flex-col items-center gap-1.5">
+      {/* Header + Date Navigation */}
+      {(() => {
+        const profile = userSettings ?? USER_PROFILE;
+        const hour = new Date().getHours();
+        const greeting = hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
+        return (
+          <div>
+            <h1 className="text-2xl font-bold" style={{ fontFamily: '"Bricolage Grotesque", sans-serif' }}>
+              Good {greeting}, {profile.name ?? USER_PROFILE.name} 👋
+            </h1>
+          </div>
+        );
+      })()}
+
+      <div className="flex flex-col items-center gap-1">
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -531,6 +544,10 @@ export function DashboardClient({
           </button>
         </div>
 
+        <p className="text-xs text-neutral-500 dark:text-neutral-400">
+          {new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+        </p>
+
         {!isToday && (
           <Link
             href="/"
@@ -540,35 +557,6 @@ export function DashboardClient({
           </Link>
         )}
       </div>
-
-      {/* Header */}
-      {(() => {
-        const profile = userSettings ?? USER_PROFILE;
-        const dob = new Date((profile.dob ?? USER_PROFILE.dob) + 'T00:00:00');
-        const now = new Date();
-        let age = now.getFullYear() - dob.getFullYear();
-        const m = now.getMonth() - dob.getMonth();
-        if (m < 0 || (m === 0 && now.getDate() < dob.getDate())) age--;
-        const heightIn = profile.heightIn ?? USER_PROFILE.heightIn;
-        const weightLbs = profile.weightLbs ?? USER_PROFILE.weightLbs;
-        const heightFt = Math.floor(heightIn / 12);
-        const heightInRem = heightIn % 12;
-        const heightM = heightIn * 0.0254;
-        const bmi = (weightLbs / 2.205) / (heightM * heightM);
-        const hour = now.getHours();
-        const greeting = hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
-        return (
-          <div>
-            <h1 className="text-2xl font-bold" style={{ fontFamily: '"Bricolage Grotesque", sans-serif' }}>
-              Good {greeting}, {profile.name ?? USER_PROFILE.name} 👋
-            </h1>
-            <p className="text-neutral-500 dark:text-neutral-400 text-sm mt-1">
-              {now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
-              {' · '}{age} yrs · {heightFt}&apos;{heightInRem}&quot;
-            </p>
-          </div>
-        );
-      })()}
 
       {/* Streaks Strip */}
       <div className="flex items-center gap-3 flex-wrap">
@@ -1008,70 +996,6 @@ export function DashboardClient({
                         </div>
                       )}
 
-                      {/* ── 5. Key metrics 2×2 grid ─────────────────────── */}
-                      <div className="grid grid-cols-2 gap-2">
-                        {[
-                          {
-                            label: 'Time in bed',
-                            value: (totalSleep != null && awakeDuration != null)
-                              ? fmtMins(totalSleep + awakeDuration)
-                              : fmtMins(totalSleep),
-                          },
-                          { label: 'Efficiency', value: efficiency != null ? `${efficiency}%` : '—' },
-                          { label: 'Resting HR', value: rhr != null ? `${rhr} bpm` : '—' },
-                          { label: 'HRV', value: hrv != null ? `${hrv} ms` : '—' },
-                        ].map(({ label, value }) => (
-                          <div key={label} className="bg-neutral-900 rounded-xl px-3.5 py-3">
-                            <p className="text-[10px] text-neutral-500 uppercase tracking-wide mb-0.5">{label}</p>
-                            <p className="text-sm font-bold text-white">{value}</p>
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* ── 6. Sleep history chart ──────────────────────── */}
-                      {sleepHistory.length > 0 && (
-                        <div className="bg-neutral-900 rounded-xl p-4 space-y-3">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">Sleep History</span>
-                            <div className="flex items-center rounded-lg overflow-hidden border border-neutral-700 text-[11px]">
-                              <button
-                                onClick={() => setSleepHistoryRange(7)}
-                                className={`px-2.5 py-1 transition-colors ${sleepHistoryRange === 7 ? 'bg-indigo-600 text-white' : 'text-neutral-400 hover:text-white'}`}
-                              >7d</button>
-                              <button
-                                onClick={() => setSleepHistoryRange(30)}
-                                className={`px-2.5 py-1 transition-colors ${sleepHistoryRange === 30 ? 'bg-indigo-600 text-white' : 'text-neutral-400 hover:text-white'}`}
-                              >30d</button>
-                            </div>
-                          </div>
-                          <div style={{ height: 140 }}>
-                            <ResponsiveContainer width="100%" height="100%">
-                              <BarChart data={chartData} margin={{ top: 4, right: 4, left: -24, bottom: 0 }} barCategoryGap="20%">
-                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-                                <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#6b7280' }} tickLine={false} axisLine={false} />
-                                <YAxis domain={[0, 10]} tick={{ fontSize: 10, fill: '#6b7280' }} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}h`} />
-                                <Tooltip
-                                  contentStyle={{ backgroundColor: '#1c1c1e', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 11, color: '#f5f5f5' }}
-                                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                  formatter={(value: any, name: any) => [typeof value === 'number' ? `${value.toFixed(1)}h` : value, typeof name === 'string' ? name.charAt(0).toUpperCase() + name.slice(1) : name]}
-                                  labelStyle={{ color: '#9ca3af', marginBottom: 2 }}
-                                />
-                                <Bar dataKey="deep" stackId="sleep" fill="#6366f1" radius={[0, 0, 0, 0]} />
-                                <Bar dataKey="rem" stackId="sleep" fill="#a78bfa" radius={[0, 0, 0, 0]} />
-                                <Bar dataKey="light" stackId="sleep" fill="#60a5fa" radius={[3, 3, 0, 0]} />
-                              </BarChart>
-                            </ResponsiveContainer>
-                          </div>
-                          <div className="flex items-center gap-4">
-                            {[{ color: '#6366f1', label: 'Deep' }, { color: '#a78bfa', label: 'REM' }, { color: '#60a5fa', label: 'Light' }].map(({ color, label }) => (
-                              <div key={label} className="flex items-center gap-1.5">
-                                <div className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: color }} />
-                                <span className="text-[11px] text-neutral-400">{label}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
                     </>
                   )}
                 </CardContent>
