@@ -487,12 +487,12 @@ export function ProgressClient({
           {/* Editable daily breakdown */}
           {localStepsChart.length > 0 && (
             <div className="mt-4 pt-4 border-t border-neutral-100 dark:border-neutral-800">
-              <p className="text-xs font-medium text-neutral-500 mb-2">Tap the pencil to edit any day</p>
+              <p className="text-xs font-medium text-neutral-500 mb-2">Tap a row to edit steps</p>
               <div className="space-y-1">
                 {localStepsChart.map((entry) => (
                   <div
                     key={entry.date}
-                    className="flex items-center justify-between py-1.5 px-2 rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors"
+                    className="group flex items-center justify-between py-1.5 px-2 rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors"
                   >
                     <div className="flex items-center gap-2">
                       <span className={`w-2 h-2 rounded-full flex-shrink-0 ${entry.steps >= stepsTarget ? 'bg-[#2A9D8F]' : 'bg-neutral-300 dark:bg-neutral-600'}`} />
@@ -526,7 +526,7 @@ export function ProgressClient({
                         <Button
                           size="icon"
                           variant="ghost"
-                          className="h-6 w-6 text-neutral-400 hover:text-[#2A9D8F]"
+                          className="h-6 w-6 text-neutral-400 hover:text-[#2A9D8F] opacity-0 group-hover:opacity-100 transition-opacity"
                           onClick={() => handleStepsEdit(entry.date, entry.steps)}
                         >
                           <Pencil className="w-3 h-3" />
