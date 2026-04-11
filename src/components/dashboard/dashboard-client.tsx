@@ -39,6 +39,7 @@ interface NutritionData {
   protein: number;
   carbs: number;
   fat: number;
+  sugar: number;
   vitaminA: number;
   vitaminC: number;
   vitaminD: number;
@@ -67,6 +68,7 @@ interface MacroTargets {
   protein: number;
   carbs: number;
   fat: number;
+  sugar: number;
 }
 
 interface FreezerData {
@@ -130,6 +132,7 @@ interface Props {
     protein: number;
     carbs: number;
     fat: number;
+    sugar: number;
   }>;
 }
 
@@ -194,71 +197,153 @@ function ReorderableCard({ children, id, index, total, onMoveUp, onMoveDown }: {
   );
 }
 
-function NutritionCard({ title, data, targets, microTargets }: { title: string; data: NutritionData; targets: MacroTargets; microTargets?: MicroTargets }) {
+const MACRO_CONFIG = [
+  { key: 'calories' as const, label: 'Calories', color: '#E07A3A', unit: '' },
+  { key: 'protein' as const, label: 'Protein', color: '#3A8A5C', unit: 'g' },
+  { key: 'carbs' as const, label: 'Carbs', color: '#2A9D8F', unit: 'g' },
+  { key: 'fat' as const, label: 'Fat', color: '#7C3AED', unit: 'g' },
+  { key: 'sugar' as const, label: 'Sugar', color: '#F43F5E', unit: 'g' },
+] as const;
+
+function NutritionCard({ title, data, targets, microTargets, meals }: {
+  title: string;
+  data: NutritionData;
+  targets: MacroTargets;
+  microTargets?: MicroTargets;
+  meals?: MealWithNutrition[];
+}) {
   const [showMicros, setShowMicros] = useState(false);
+  const [showByMeal, setShowByMeal] = useState(false);
+
+  // Group meals by mealType and sum nutrition per group
+  const mealGroups = React.useMemo(() => {
+    if (!meals || meals.length === 0) return [];
+    const groups: Record<string, { label: string; calories: number; protein: number; carbs: number; fat: number; sugar: number; items: MealWithNutrition[] }> = {};
+    const order = ['breakfast', 'lunch', 'dinner', 'snack'];
+    for (const m of meals) {
+      const type = m.mealType;
+      if (!groups[type]) {
+        groups[type] = { label: MEAL_TYPE_LABELS[type] ?? type, calories: 0, protein: 0, carbs: 0, fat: 0, sugar: 0, items: [] };
+      }
+      groups[type].calories += m.calories;
+      groups[type].protein += m.protein;
+      groups[type].carbs += m.carbs;
+      groups[type].fat += m.fat;
+      groups[type].sugar += m.sugar;
+      groups[type].items.push(m);
+    }
+    return order.filter(t => groups[t]).map(t => groups[t]);
+  }, [meals]);
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">{title}</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div>
-          <div className="flex justify-between text-sm mb-1">
-            <span className="font-medium">Calories</span>
-            <span className="text-neutral-500">{data.calories} / {targets.calories}</span>
-          </div>
-          <Progress value={(data.calories / targets.calories) * 100} indicatorClassName="bg-[#E07A3A]" />
-        </div>
-        <div>
-          <div className="flex justify-between text-sm mb-1">
-            <span className="font-medium">Protein</span>
-            <span className="text-neutral-500">{data.protein}g / {targets.protein}g</span>
-          </div>
-          <Progress value={(data.protein / targets.protein) * 100} indicatorClassName="bg-[#3A8A5C]" />
-        </div>
-        <div>
-          <div className="flex justify-between text-sm mb-1">
-            <span className="font-medium">Carbs</span>
-            <span className="text-neutral-500">{data.carbs}g / {targets.carbs}g</span>
-          </div>
-          <Progress value={(data.carbs / targets.carbs) * 100} indicatorClassName="bg-[#2A9D8F]" />
-        </div>
-        <div>
-          <div className="flex justify-between text-sm mb-1">
-            <span className="font-medium">Fat</span>
-            <span className="text-neutral-500">{data.fat}g / {targets.fat}g</span>
-          </div>
-          <Progress value={(data.fat / targets.fat) * 100} indicatorClassName="bg-[#7C3AED]" />
-        </div>
-
-        {microTargets && (
-          <div>
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base">{title}</CardTitle>
+          {meals && meals.length > 0 && (
             <button
               type="button"
-              onClick={() => setShowMicros(!showMicros)}
-              className="text-xs text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 transition-colors w-full text-left mt-1"
+              onClick={() => setShowByMeal(!showByMeal)}
+              className="text-xs px-2.5 py-1 rounded-md border border-neutral-200 dark:border-neutral-700 text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 hover:border-neutral-400 dark:hover:border-neutral-500 transition-colors"
             >
-              {showMicros ? 'Hide micros \u25B4' : 'Show micros \u25BE'}
+              {showByMeal ? 'Total' : 'By Meal'}
             </button>
-            {showMicros && (
-              <div className="space-y-3 mt-3 pt-3 border-t border-neutral-100 dark:border-neutral-800">
-                {MICRO_BAR_CONFIG.map(({ key, label, color, unit }) => (
-                  <div key={key}>
-                    <div className="flex justify-between text-xs mb-1">
-                      <span className="font-medium">{label}</span>
-                      <span className="text-neutral-500">
-                        {data[key]}{unit} / {microTargets[key]}{unit}
-                      </span>
-                    </div>
-                    <Progress
-                      value={Math.min((data[key] / microTargets[key]) * 100, 100)}
-                      indicatorStyle={{ backgroundColor: color }}
-                    />
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {!showByMeal ? (
+          <>
+            {MACRO_CONFIG.map(({ key, label, color, unit }) => {
+              const val = key === 'calories' ? data.calories : data[key];
+              const target = key === 'calories' ? targets.calories : targets[key];
+              return (
+                <div key={key}>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="font-medium">{label}</span>
+                    <span className="text-neutral-500">{val}{unit} / {target}{unit}</span>
+                  </div>
+                  <Progress value={(val / target) * 100} indicatorStyle={{ backgroundColor: color }} />
+                </div>
+              );
+            })}
+
+            {microTargets && (
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setShowMicros(!showMicros)}
+                  className="text-xs text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 transition-colors w-full text-left mt-1"
+                >
+                  {showMicros ? 'Hide micros \u25B4' : 'Show micros \u25BE'}
+                </button>
+                {showMicros && (
+                  <div className="space-y-3 mt-3 pt-3 border-t border-neutral-100 dark:border-neutral-800">
+                    {MICRO_BAR_CONFIG.map(({ key, label, color, unit }) => (
+                      <div key={key}>
+                        <div className="flex justify-between text-xs mb-1">
+                          <span className="font-medium">{label}</span>
+                          <span className="text-neutral-500">
+                            {data[key]}{unit} / {microTargets[key]}{unit}
+                          </span>
+                        </div>
+                        <Progress
+                          value={Math.min((data[key] / microTargets[key]) * 100, 100)}
+                          indicatorStyle={{ backgroundColor: color }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="space-y-4">
+            {/* Header row */}
+            <div className="grid grid-cols-6 text-[11px] text-neutral-500 font-medium border-b border-neutral-100 dark:border-neutral-800 pb-2">
+              <span></span>
+              <span className="text-center">Cal</span>
+              <span className="text-center">Protein</span>
+              <span className="text-center">Carbs</span>
+              <span className="text-center">Fat</span>
+              <span className="text-center">Sugar</span>
+            </div>
+
+            {mealGroups.map((group) => (
+              <div key={group.label}>
+                {/* Group header */}
+                <div className="grid grid-cols-6 items-center py-1.5">
+                  <span className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">{group.label}</span>
+                  <span className="text-xs font-semibold text-center text-[#E07A3A]">{group.calories}</span>
+                  <span className="text-xs font-semibold text-center text-[#3A8A5C]">{group.protein}g</span>
+                  <span className="text-xs font-semibold text-center text-[#2A9D8F]">{group.carbs}g</span>
+                  <span className="text-xs font-semibold text-center text-[#7C3AED]">{group.fat}g</span>
+                  <span className="text-xs font-semibold text-center text-[#F43F5E]">{group.sugar}g</span>
+                </div>
+                {/* Individual items */}
+                {group.items.map((item) => (
+                  <div key={item.id} className="grid grid-cols-6 items-center py-1 pl-2">
+                    <span className="text-[11px] text-neutral-500 truncate pr-1">{item.recipeName}</span>
+                    <span className="text-[11px] text-neutral-500 text-center">{item.calories}</span>
+                    <span className="text-[11px] text-neutral-500 text-center">{item.protein}g</span>
+                    <span className="text-[11px] text-neutral-500 text-center">{item.carbs}g</span>
+                    <span className="text-[11px] text-neutral-500 text-center">{item.fat}g</span>
+                    <span className="text-[11px] text-neutral-500 text-center">{item.sugar}g</span>
                   </div>
                 ))}
               </div>
-            )}
+            ))}
+
+            {/* Daily total row */}
+            <div className="grid grid-cols-6 items-center pt-2 border-t border-neutral-200 dark:border-neutral-700">
+              <span className="text-xs font-bold text-neutral-800 dark:text-neutral-200">Total</span>
+              <span className="text-xs font-bold text-center text-[#E07A3A]">{data.calories}</span>
+              <span className="text-xs font-bold text-center text-[#3A8A5C]">{data.protein}g</span>
+              <span className="text-xs font-bold text-center text-[#2A9D8F]">{data.carbs}g</span>
+              <span className="text-xs font-bold text-center text-[#7C3AED]">{data.fat}g</span>
+              <span className="text-xs font-bold text-center text-[#F43F5E]">{data.sugar}g</span>
+            </div>
           </div>
         )}
       </CardContent>
@@ -275,6 +360,7 @@ interface MealWithNutrition {
   protein: number;
   carbs: number;
   fat: number;
+  sugar: number;
 }
 
 function MealsCard({ meals }: { meals: MealWithNutrition[] }) {
@@ -308,7 +394,7 @@ function MealsCard({ meals }: { meals: MealWithNutrition[] }) {
                   </div>
                 </button>
                 {isOpen && (
-                  <div className="grid grid-cols-4 gap-3 px-2 py-3 bg-neutral-50 dark:bg-neutral-800/50 rounded-lg mb-1">
+                  <div className="grid grid-cols-5 gap-2 px-2 py-3 bg-neutral-50 dark:bg-neutral-800/50 rounded-lg mb-1">
                     <div className="text-center">
                       <p className="text-xs text-neutral-500">Calories</p>
                       <p className="text-sm font-semibold text-[#E07A3A]">{meal.calories}</p>
@@ -324,6 +410,10 @@ function MealsCard({ meals }: { meals: MealWithNutrition[] }) {
                     <div className="text-center">
                       <p className="text-xs text-neutral-500">Fat</p>
                       <p className="text-sm font-semibold text-[#7C3AED]">{meal.fat}g</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xs text-neutral-500">Sugar</p>
+                      <p className="text-sm font-semibold text-[#F43F5E]">{meal.sugar}g</p>
                     </div>
                   </div>
                 )}
@@ -1218,7 +1308,7 @@ export function DashboardClient({
             </Card>
           ),
           'nutrition': () => (
-            <NutritionCard title="Today's Nutrition" data={myNutrition} targets={targets} microTargets={microTargets} />
+            <NutritionCard title="Today's Nutrition" data={myNutrition} targets={targets} microTargets={microTargets} meals={todayMeals} />
           ),
           'teeth': () => {
             const brushSessions = localDental.filter(l => l.activity === 'brush').sort((a, b) => a.time.localeCompare(b.time));

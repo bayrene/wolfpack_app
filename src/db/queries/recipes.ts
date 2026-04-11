@@ -26,6 +26,7 @@ export async function getRecipeById(id: number) {
         proteinPerUnit: ingredients.proteinPerUnit,
         carbsPerUnit: ingredients.carbsPerUnit,
         fatPerUnit: ingredients.fatPerUnit,
+        sugarPerUnit: ingredients.sugarPerUnit,
         fiberPerUnit: ingredients.fiberPerUnit,
         vitaminAPerUnit: ingredients.vitaminAPerUnit,
         vitaminCPerUnit: ingredients.vitaminCPerUnit,

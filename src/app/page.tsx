@@ -63,6 +63,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     carbs: settings.carbsTarget ?? 200,
     fat: settings.fatTarget ?? 65,
     fiber: settings.fiberTarget ?? 30,
+    sugar: settings.sugarTarget ?? 50,
   };
   const microTargets = {
     vitaminA: settings.vitaminATarget ?? 900,
@@ -79,7 +80,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
   // Calculate today's nutrition
   const calculatePersonNutrition = async (person: string) => {
-    let calories = 0, protein = 0, carbs = 0, fat = 0;
+    let calories = 0, protein = 0, carbs = 0, fat = 0, sugar = 0;
     let vitaminA = 0, vitaminC = 0, vitaminD = 0, vitaminB12 = 0;
     let iron = 0, zinc = 0, calcium = 0, magnesium = 0, potassium = 0;
 
@@ -94,7 +95,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       } else if (recipe) {
         const recipeDetail = await getRecipeById(recipe.id);
         if (recipeDetail) {
-          let tc = 0, tp = 0, tca = 0, tf = 0;
+          let tc = 0, tp = 0, tca = 0, tf = 0, tSugar = 0;
           let tVitA = 0, tVitC = 0, tVitD = 0, tVitB12 = 0;
           let tIron = 0, tZinc = 0, tCalcium = 0, tMag = 0, tPot = 0;
           for (const ri of recipeDetail.ingredients) {
@@ -102,6 +103,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
             tp += ri.ingredient.proteinPerUnit * ri.amount;
             tca += ri.ingredient.carbsPerUnit * ri.amount;
             tf += ri.ingredient.fatPerUnit * ri.amount;
+            tSugar += (ri.ingredient.sugarPerUnit ?? 0) * ri.amount;
             tVitA += (ri.ingredient.vitaminAPerUnit ?? 0) * ri.amount;
             tVitC += (ri.ingredient.vitaminCPerUnit ?? 0) * ri.amount;
             tVitD += (ri.ingredient.vitaminDPerUnit ?? 0) * ri.amount;
@@ -115,6 +117,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           const rs = recipe.servings ?? 1;
           calories += (tc / rs) * servings; protein += (tp / rs) * servings;
           carbs += (tca / rs) * servings; fat += (tf / rs) * servings;
+          sugar += (tSugar / rs) * servings;
           vitaminA += (tVitA / rs) * servings; vitaminC += (tVitC / rs) * servings;
           vitaminD += (tVitD / rs) * servings; vitaminB12 += (tVitB12 / rs) * servings;
           iron += (tIron / rs) * servings; zinc += (tZinc / rs) * servings;
@@ -132,6 +135,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         const dose = log.dose;
         calories += (n.calories ?? 0) * dose; protein += (n.protein ?? 0) * dose;
         carbs += (n.carbs ?? 0) * dose; fat += (n.fat ?? 0) * dose;
+        sugar += (n.sugar ?? 0) * dose;
         vitaminA += (n.vitaminA ?? 0) * dose; vitaminC += (n.vitaminC ?? 0) * dose;
         vitaminD += (n.vitaminD ?? 0) * dose; vitaminB12 += (n.vitaminB12 ?? 0) * dose;
         iron += (n.iron ?? 0) * dose; zinc += (n.zinc ?? 0) * dose;
@@ -142,7 +146,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
     return {
       calories: Math.round(calories), protein: Math.round(protein),
-      carbs: Math.round(carbs), fat: Math.round(fat),
+      carbs: Math.round(carbs), fat: Math.round(fat), sugar: Math.round(sugar),
       vitaminA: Math.round(vitaminA * 10) / 10, vitaminC: Math.round(vitaminC * 10) / 10,
       vitaminD: Math.round(vitaminD * 10) / 10, vitaminB12: Math.round(vitaminB12 * 10) / 10,
       iron: Math.round(iron * 10) / 10, zinc: Math.round(zinc * 10) / 10,
@@ -225,7 +229,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       stepsHistory={stepsHistory}
       userSettings={{ name: settings.name ?? 'Rene', dob: settings.dob ?? '1993-03-14', heightIn: settings.heightIn ?? 69, weightLbs: settings.weightLbs ?? 150 }}
       todayMeals={await Promise.all(todayMeals.map(async ({ meal, recipe }) => {
-        let cal = 0, pro = 0, car = 0, f = 0;
+        let cal = 0, pro = 0, car = 0, f = 0, sug = 0;
         if (meal.customCalories != null) {
           const sv = meal.servingsConsumed ?? 1;
           cal = Math.round(meal.customCalories * sv);
@@ -235,12 +239,13 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         } else if (recipe) {
           const rd = await getRecipeById(recipe.id);
           if (rd) {
-            let tc = 0, tp = 0, tca = 0, tf = 0;
+            let tc = 0, tp = 0, tca = 0, tf = 0, ts = 0;
             for (const ri of rd.ingredients) {
               tc += ri.ingredient.caloriesPerUnit * ri.amount;
               tp += ri.ingredient.proteinPerUnit * ri.amount;
               tca += ri.ingredient.carbsPerUnit * ri.amount;
               tf += ri.ingredient.fatPerUnit * ri.amount;
+              ts += (ri.ingredient.sugarPerUnit ?? 0) * ri.amount;
             }
             const rs = recipe.servings ?? 1;
             const sv = meal.servingsConsumed ?? 1;
@@ -248,12 +253,13 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
             pro = Math.round((tp / rs) * sv);
             car = Math.round((tca / rs) * sv);
             f = Math.round((tf / rs) * sv);
+            sug = Math.round((ts / rs) * sv);
           }
         }
         return {
           ...meal,
           recipeName: recipe?.name ?? meal.customName ?? 'Unknown',
-          calories: cal, protein: pro, carbs: car, fat: f,
+          calories: cal, protein: pro, carbs: car, fat: f, sugar: sug,
         };
       }))}
       ouraToday={ouraToday}

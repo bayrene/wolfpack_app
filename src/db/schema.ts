@@ -533,6 +533,7 @@ export const userSettings = sqliteTable('user_settings', {
   carbsTarget: integer('carbs_target').default(200),
   fatTarget: integer('fat_target').default(65),
   fiberTarget: integer('fiber_target').default(30),
+  sugarTarget: integer('sugar_target').default(50),
   // Micro targets (optimal levels)
   vitaminATarget: real('vitamin_a_target').default(900),
   vitaminCTarget: real('vitamin_c_target').default(500),
