@@ -114,6 +114,33 @@ export async function POST() {
     upserted++;
   }
 
+  // Backfill from daily_sleep when no detailed /sleep session exists for that day
+  // This covers days where the ring syncs a score but no full session data
+  const sleepDays = new Set(mainSleeps.map((s: Record<string, unknown>) => s.day as string));
+  for (const d of dailySleepData.data ?? []) {
+    const day: string = d.day as string;
+    if (sleepDays.has(day)) continue; // already have detailed data
+
+    const data = {
+      date: day,
+      score: d.score as number ?? undefined,
+      restfulness: d.contributors?.restfulness as number ?? undefined,
+      source: 'oura',
+    };
+
+    const allForDay = await db.select().from(sleepLog)
+      .where(eq(sleepLog.date, day))
+      .all();
+    const existing = allForDay.find(r => r.source === 'oura');
+
+    if (existing) {
+      await db.update(sleepLog).set(data).where(eq(sleepLog.id, existing.id)).run();
+    } else {
+      await db.insert(sleepLog).values(data).run();
+    }
+    upserted++;
+  }
+
   // Upsert readiness into ouraDaily
   let readinessUpserted = 0;
   for (const r of readinessData.data ?? []) {
