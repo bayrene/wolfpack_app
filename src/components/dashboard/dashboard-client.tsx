@@ -28,7 +28,7 @@ import { formatCurrency } from '@/lib/utils';
 import { MEAL_TYPE_LABELS, STEPS_TARGET, WATER_TARGET, COFFEE_LIMIT, CAFFEINE_PER_CUP, USER_PROFILE } from '@/lib/constants';
 import { upsertSteps, upsertWater, upsertCoffee } from '@/db/queries/daily-log';
 import { toast } from 'sonner';
-import type { Recipe, SleepLog, DailyLog, OuraDaily, Supplement, SupplementLogEntry } from '@/db/schema';
+import type { Recipe, SleepLog, DailyLog, OuraDaily, Supplement, SupplementLogEntry, DentalLogEntry } from '@/db/schema';
 import { logSupplement, deleteSupplementLog } from '@/db/queries/supplements';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -117,6 +117,7 @@ interface Props {
   sleepToday?: SleepLog | null;
   ouraHistory?: OuraDaily[];
   sleepHistory?: SleepLog[];
+  todayDentalLogs?: DentalLogEntry[];
   todayMeals: Array<{
     id: number;
     date: string;
@@ -146,10 +147,10 @@ const MICRO_BAR_CONFIG = [
   { key: 'potassium' as const, label: 'Potassium', color: '#06B6D4', unit: 'mg' },
 ];
 
-const CARD_IDS = ['oura', 'quick-log', 'nutrition', 'steps', 'water', 'coffee', 'supplements', 'meals'] as const;
+const CARD_IDS = ['oura', 'quick-log', 'nutrition', 'steps', 'water', 'coffee', 'teeth', 'supplements', 'meals'] as const;
 type CardId = typeof CARD_IDS[number];
 const DEFAULT_ORDER: CardId[] = [...CARD_IDS];
-const STORAGE_KEY = 'dashboard-card-order-v8';
+const STORAGE_KEY = 'dashboard-card-order-v9';
 
 function ReorderableCard({ children, id, index, total, onMoveUp, onMoveDown }: {
   children: React.ReactNode;
@@ -285,6 +286,7 @@ export function DashboardClient({
   sleepToday = null,
   ouraHistory = [],
   sleepHistory = [],
+  todayDentalLogs = [],
 }: Props) {
   const router = useRouter();
   const dateInputRef = useRef<HTMLInputElement>(null);
@@ -1174,6 +1176,86 @@ export function DashboardClient({
               </CardContent>
             </Card>
           ),
+          'teeth': () => {
+            const brushSessions = todayDentalLogs.filter(l => l.activity === 'brush');
+            const totalBrushSec = brushSessions.reduce((sum, l) => sum + (l.duration ?? 0), 0);
+            const totalBrushMin = Math.floor(totalBrushSec / 60);
+            const totalBrushRemSec = totalBrushSec % 60;
+            const sessionCount = brushSessions.length;
+            // Recommended: 2 sessions, 2 min each = 240 sec total
+            const targetSessions = 2;
+            const targetSec = 240;
+            const progressPct = Math.min((totalBrushSec / targetSec) * 100, 100);
+            const otherActivities = todayDentalLogs.filter(l => l.activity !== 'brush');
+
+            return (
+              <Link href="/grooming">
+                <Card className="cursor-pointer hover:border-cyan-500/30 transition-colors">
+                  <CardContent className="py-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">🪥</span>
+                        <p className="text-sm font-medium">Toothbrushing</p>
+                      </div>
+                      <Badge variant={sessionCount >= targetSessions ? 'default' : 'secondary'}>
+                        {sessionCount}/{targetSessions} sessions
+                      </Badge>
+                    </div>
+
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-xs text-neutral-500">
+                        {totalBrushMin}m {totalBrushRemSec}s / 4m target
+                      </p>
+                      <p className="text-sm font-semibold">
+                        {totalBrushMin > 0 ? `${totalBrushMin}m ${totalBrushRemSec}s` : totalBrushSec > 0 ? `${totalBrushSec}s` : 'No sessions'}
+                      </p>
+                    </div>
+
+                    <Progress
+                      value={progressPct}
+                      indicatorClassName={progressPct >= 100 ? 'bg-emerald-500' : progressPct >= 50 ? 'bg-cyan-500' : 'bg-amber-500'}
+                      className="mt-1"
+                    />
+
+                    {brushSessions.length > 0 && (
+                      <div className="mt-3 space-y-1">
+                        {brushSessions.map((s) => {
+                          const dur = s.duration ?? 0;
+                          const m = Math.floor(dur / 60);
+                          const sec = dur % 60;
+                          return (
+                            <div key={s.id} className="flex items-center justify-between text-xs text-neutral-400">
+                              <span>{s.time}</span>
+                              <span>{m > 0 ? `${m}m ${sec}s` : `${sec}s`}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {otherActivities.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {otherActivities.map((a) => (
+                          <Badge key={a.id} variant="outline" className="text-[10px]">
+                            {a.activity === 'water_flosser' ? 'Water Flosser' :
+                             a.activity === 'floss_pick' ? 'Floss' :
+                             a.activity === 'mouthwash' ? 'Mouthwash' :
+                             a.activity === 'whitener' ? 'Whitener' : a.activity}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+
+                    {sessionCount === 0 && (
+                      <p className="text-[10px] text-neutral-500 mt-2">
+                        Brush data syncs automatically from your Oral-B app via Apple Health
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+              </Link>
+            );
+          },
           'supplements': () => (
             <Card>
               <CardHeader>

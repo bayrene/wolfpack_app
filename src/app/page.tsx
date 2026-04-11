@@ -6,6 +6,7 @@ import { getSupplementLogs, getActiveSupplements } from '@/db/queries/supplement
 import { getUserSettings } from '@/db/queries/user-settings';
 import { getAllSleepLogs } from '@/db/queries/sleep';
 import { getOuraDaily, getOuraHistory, getSleepLog, getSleepHistory } from '@/db/queries/oura';
+import { getDentalLogs } from '@/db/queries/dental';
 import { todayISO, daysUntil } from '@/lib/utils';
 import { DashboardClient } from '@/components/dashboard/dashboard-client';
 import { startOfWeek, endOfWeek, format, isWeekend } from 'date-fns';
@@ -33,7 +34,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const selectedDateObj = new Date(selectedDate + 'T00:00:00');
   const thirtyDaysAgo = format(new Date(selectedDateObj.getTime() - 30 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd');
 
-  const [todayMeals, freezerItems, allRecipes, weeklySpend, todayStepsLog, todaySupplements, activeSupplements, settings, sleepLogs, stepsHistory, ouraToday, sleepToday, ouraHistory, sleepHistory] = await Promise.all([
+  const [todayMeals, freezerItems, allRecipes, weeklySpend, todayStepsLog, todaySupplements, activeSupplements, settings, sleepLogs, stepsHistory, ouraToday, sleepToday, ouraHistory, sleepHistory, todayDentalLogs] = await Promise.all([
     getMealsForDate(selectedDate),
     getFreezerInventory(),
     getAllRecipes(),
@@ -48,6 +49,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     getSleepLog(selectedDate),
     getOuraHistory(thirtyDaysAgo, selectedDate),
     getSleepHistory(thirtyDaysAgo, selectedDate),
+    getDentalLogs(selectedDate, selectedDate),
   ]);
 
   const todaySteps = todayStepsLog?.steps ?? 0;
@@ -230,6 +232,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       sleepToday={sleepToday}
       ouraHistory={ouraHistory}
       sleepHistory={sleepHistory}
+      todayDentalLogs={todayDentalLogs}
     />
   );
 }

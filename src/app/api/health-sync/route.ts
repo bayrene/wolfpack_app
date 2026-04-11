@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/db';
-import { dailyLog } from '@/db/schema';
+import { dailyLog, dentalLog } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 
@@ -59,6 +59,7 @@ export async function POST(req: Request) {
   console.log('[health-sync] metric names:', metrics.map(m => m.name).join(', '));
 
   const updates: Record<string, { steps?: number; waterOz?: number; weightLbs?: number; restingHeartRate?: number; caffeineMg?: number; workoutMinutes?: number }> = {};
+  const brushEvents: Array<{ date: string; time: string; duration: number; source: string }> = [];
 
   for (const metric of metrics) {
     const nameLower = metric.name.toLowerCase().replace(/\s+/g, '');
@@ -153,9 +154,24 @@ export async function POST(req: Request) {
         updates[date].workoutMinutes = (updates[date].workoutMinutes ?? 0) + Math.round(getValue(dp));
       }
     }
+
+    // Toothbrushing — Apple Health "Toothbrush Event" from Oral-B / smart toothbrushes
+    if (nameLower === 'toothbrushingevent' || nameLower === 'toothbrushing' || nameLower === 'toothbrush_event' || nameLower === 'apple_stand_time_toothbrushing') {
+      for (const dp of metric.data) {
+        const date = parseDate(dp.date);
+        // Extract time from the date string (format: "2026-04-11 02:13:00 -0500")
+        const timeMatch = dp.date.match(/(\d{2}:\d{2})/);
+        const time = timeMatch ? timeMatch[1] : '00:00';
+        // Duration: qty is typically in minutes, convert to seconds
+        const rawVal = getValue(dp);
+        const durationSec = rawVal < 10 ? Math.round(rawVal * 60) : Math.round(rawVal);
+        brushEvents.push({ date, time, duration: durationSec, source: dp.source ?? 'Apple Health' });
+      }
+    }
   }
 
   console.log('[health-sync] updates:', JSON.stringify(updates));
+  console.log('[health-sync] brushEvents:', brushEvents.length);
 
   let upserted = 0;
   for (const [date, vals] of Object.entries(updates)) {
@@ -188,8 +204,32 @@ export async function POST(req: Request) {
     upserted++;
   }
 
+  // Insert toothbrushing events into dental_log (skip duplicates by date+time)
+  let brushInserted = 0;
+  for (const evt of brushEvents) {
+    const existing = await db
+      .select()
+      .from(dentalLog)
+      .where(and(eq(dentalLog.date, evt.date), eq(dentalLog.time, evt.time), eq(dentalLog.activity, 'brush')))
+      .get();
+    if (!existing) {
+      await db.insert(dentalLog)
+        .values({
+          date: evt.date,
+          time: evt.time,
+          activity: 'brush',
+          duration: evt.duration,
+          notes: `Auto-synced from ${evt.source}`,
+        })
+        .run();
+      brushInserted++;
+    }
+  }
+
   revalidatePath('/');
   revalidatePath('/progress');
+  revalidatePath('/teeth');
+  revalidatePath('/grooming');
 
-  return NextResponse.json({ ok: true, datesUpdated: upserted, metricsReceived: metrics.map(m => m.name) });
+  return NextResponse.json({ ok: true, datesUpdated: upserted, brushSessionsSynced: brushInserted, metricsReceived: metrics.map(m => m.name) });
 }
