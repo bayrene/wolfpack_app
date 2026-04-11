@@ -74,11 +74,22 @@ export async function POST(req: Request) {
     }
 
     if (nameLower === 'dietarywater' || nameLower === 'water' || nameLower === 'dietarywater(l)' || nameLower === 'dietary_water') {
+      const units = metric.units?.toLowerCase() ?? '';
       for (const dp of metric.data) {
         const date = parseDate(dp.date);
         updates[date] = updates[date] ?? {};
         const val = getValue(dp);
-        const oz = val > 50 ? Math.round(val) : Math.round(val * 33.814);
+        let oz: number;
+        if (units.includes('cup')) {
+          oz = Math.round(val * 8);
+        } else if (units.includes('ml') || units.includes('milliliter')) {
+          oz = Math.round(val * 0.033814);
+        } else if (units.includes('fl_oz') || units === 'oz' || units.includes('fluid')) {
+          oz = Math.round(val);
+        } else {
+          // Default: liters (Apple Health standard)
+          oz = val > 50 ? Math.round(val) : Math.round(val * 33.814);
+        }
         updates[date].waterOz = (updates[date].waterOz ?? 0) + oz;
       }
     }
