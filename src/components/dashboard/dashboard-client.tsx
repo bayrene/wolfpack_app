@@ -946,6 +946,11 @@ export function DashboardClient({
             const bedtime = s?.bedtime ?? null;
             const wakeTime = s?.wakeTime ?? null;
 
+            // Oura daily data (readiness, stress)
+            const readinessScore = ouraToday?.readinessScore ?? null;
+            const stressHigh = ouraToday?.stressHigh ?? null;
+            const stressRecovery = ouraToday?.stressRecovery ?? null;
+
             const sleepPhasesRaw = (s as (SleepLog & { sleepPhases?: string | null }) | null)?.sleepPhases ?? null;
             const phaseSegments = parsePhases(sleepPhasesRaw);
             const totalPhaseMins = phaseSegments.reduce((acc, seg) => acc + seg.duration, 0);
@@ -1086,7 +1091,7 @@ export function DashboardClient({
                     </div>
                   ) : (
                     <>
-                      {/* ── 2. Sleep Score ──────────────────────────────── */}
+                      {/* ── 2. Sleep Score + Oura Stats ────────────────── */}
                       <div>
                         <div className="flex items-baseline gap-3">
                           <span className="text-5xl font-bold text-white leading-none">
@@ -1099,6 +1104,30 @@ export function DashboardClient({
                           )}
                         </div>
                         <p className="text-xs text-neutral-500 mt-1.5">{subtitle}</p>
+
+                        {/* Oura ring stats row */}
+                        <div className="grid grid-cols-3 gap-2 mt-3">
+                          <div className="bg-neutral-900 rounded-xl px-3 py-2.5 text-center">
+                            <p className="text-[10px] text-neutral-500 uppercase tracking-wide mb-0.5">Readiness</p>
+                            <p className={`text-lg font-bold ${readinessScore != null ? (readinessScore >= 70 ? 'text-emerald-400' : readinessScore >= 50 ? 'text-amber-400' : 'text-orange-400') : 'text-neutral-600'}`}>
+                              {readinessScore ?? '—'}
+                            </p>
+                          </div>
+                          <div className="bg-neutral-900 rounded-xl px-3 py-2.5 text-center">
+                            <p className="text-[10px] text-neutral-500 uppercase tracking-wide mb-0.5">Heart Rate</p>
+                            <p className="text-lg font-bold text-red-400">
+                              {rhr != null ? `${rhr}` : '—'}
+                              {rhr != null && <span className="text-[10px] font-normal text-neutral-500 ml-0.5">bpm</span>}
+                            </p>
+                          </div>
+                          <div className="bg-neutral-900 rounded-xl px-3 py-2.5 text-center">
+                            <p className="text-[10px] text-neutral-500 uppercase tracking-wide mb-0.5">Stress</p>
+                            <p className={`text-lg font-bold ${stressHigh != null ? (stressHigh <= 15 ? 'text-emerald-400' : stressHigh <= 45 ? 'text-amber-400' : 'text-red-400') : 'text-neutral-600'}`}>
+                              {stressHigh != null ? `${stressHigh}` : '—'}
+                              {stressHigh != null && <span className="text-[10px] font-normal text-neutral-500 ml-0.5">min</span>}
+                            </p>
+                          </div>
+                        </div>
                       </div>
 
                       {/* ── 4. Contributors ─────────────────────────────── */}
