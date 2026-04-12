@@ -1093,17 +1093,37 @@ export function DashboardClient({
                     <>
                       {/* ── 2. Sleep Score + Oura Stats ────────────────── */}
                       <div>
-                        <div className="flex items-baseline gap-3">
-                          <span className="text-5xl font-bold text-white leading-none">
-                            {sleepScore ?? '—'}
-                          </span>
-                          {scoreLabel && (
-                            <span className="text-sm font-semibold" style={{ color: scoreLabelColor }}>
-                              {scoreLabel}
-                            </span>
-                          )}
+                        <div className="flex items-center gap-4">
+                          {/* Circular score ring */}
+                          <div className="relative w-24 h-24 flex-shrink-0">
+                            <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
+                              {/* Background ring */}
+                              <circle cx="50" cy="50" r="42" fill="none" stroke="#262626" strokeWidth="7" />
+                              {/* Score ring */}
+                              <circle
+                                cx="50" cy="50" r="42"
+                                fill="none"
+                                stroke={scoreLabelColor}
+                                strokeWidth="7"
+                                strokeLinecap="round"
+                                strokeDasharray={`${(sleepScore ?? 0) / 100 * 2 * Math.PI * 42} ${2 * Math.PI * 42}`}
+                              />
+                            </svg>
+                            <div className="absolute inset-0 flex flex-col items-center justify-center">
+                              <span className="text-2xl font-bold text-white leading-none">{sleepScore ?? '—'}</span>
+                              <span className="text-[9px] text-neutral-500 mt-0.5">SLEEP</span>
+                            </div>
+                          </div>
+                          {/* Label + subtitle */}
+                          <div className="flex-1">
+                            {scoreLabel && (
+                              <span className="text-sm font-semibold" style={{ color: scoreLabelColor }}>
+                                {scoreLabel}
+                              </span>
+                            )}
+                            <p className="text-xs text-neutral-500 mt-0.5">{subtitle}</p>
+                          </div>
                         </div>
-                        <p className="text-xs text-neutral-500 mt-1.5">{subtitle}</p>
 
                         {/* Oura ring stats row */}
                         <div className="grid grid-cols-3 gap-2 mt-3">
