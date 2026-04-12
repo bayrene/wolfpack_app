@@ -1539,8 +1539,24 @@ export function DashboardClient({
                   const extraTime = brushModal.extrasOnly
                     ? (localDental.find(l => l.id === brushModal.existingId)?.time ?? time2)
                     : time2;
-                  for (const extra of brushExtras) {
-                    if (extra === 'probiotic' || extra === 'bleeding') continue;
+                  const extraActivities = Array.from(brushExtras).filter(e => e !== 'probiotic' && e !== 'bleeding');
+                  // Optimistically add extras to localDental so card updates instantly
+                  if (extraActivities.length > 0) {
+                    setLocalDental(prev => [
+                      ...prev,
+                      ...extraActivities.map((extra, i) => ({
+                        id: -(Date.now() + i + 1),
+                        date: selectedDate,
+                        time: extraTime,
+                        activity: extra as 'mouthwash' | 'floss_pick' | 'water_flosser',
+                        duration: null,
+                        productId: null,
+                        notes: null,
+                        createdAt: null,
+                      })),
+                    ]);
+                  }
+                  for (const extra of extraActivities) {
                     await addDentalLog({ date: selectedDate, time: extraTime, activity: extra as 'mouthwash' | 'floss_pick' | 'water_flosser' });
                   }
                   const extras = Array.from(brushExtras);
