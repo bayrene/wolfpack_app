@@ -90,6 +90,7 @@ export function SmokingClient({ logs, strains, today, embedded }: Props) {
     const d = new Date(today + 'T12:00:00');
     return { year: d.getFullYear(), month: d.getMonth() };
   });
+  const [selectedCalDate, setSelectedCalDate] = useState<string | null>(null);
 
   // Hookah log modal
   const [showHookahModal, setShowHookahModal] = useState(false);
@@ -203,6 +204,7 @@ export function SmokingClient({ logs, strains, today, embedded }: Props) {
   }, [calMonth, logs]);
 
   const navigateCalMonth = useCallback((dir: -1 | 1) => {
+    setSelectedCalDate(null);
     setCalMonth(prev => {
       let m = prev.month + dir;
       let y = prev.year;
@@ -545,17 +547,22 @@ export function SmokingClient({ logs, strains, today, embedded }: Props) {
               const total = hookah + cannabis;
               const isToday = dateStr === today;
 
+              const isSelected = dateStr === selectedCalDate;
+
               return (
-                <div
+                <button
                   key={day}
+                  type="button"
+                  onClick={() => setSelectedCalDate(isSelected ? null : dateStr)}
                   className={cn(
                     'h-11 rounded-lg flex flex-col items-center justify-center relative transition-colors',
                     isToday && 'ring-1 ring-[#E07A3A]',
+                    isSelected && 'ring-2 ring-white/60',
                     total === 0
-                      ? 'bg-neutral-50 dark:bg-neutral-800/50'
+                      ? 'bg-neutral-50 dark:bg-neutral-800/50 hover:bg-neutral-100 dark:hover:bg-neutral-700/50'
                       : total <= 1
-                        ? 'bg-amber-100 dark:bg-amber-900/30'
-                        : 'bg-orange-100 dark:bg-orange-900/30',
+                        ? 'bg-amber-100 dark:bg-amber-900/30 hover:bg-amber-200 dark:hover:bg-amber-900/50'
+                        : 'bg-orange-100 dark:bg-orange-900/30 hover:bg-orange-200 dark:hover:bg-orange-900/50',
                   )}
                 >
                   <span className={cn(
@@ -574,10 +581,66 @@ export function SmokingClient({ logs, strains, today, embedded }: Props) {
                       )}
                     </div>
                   )}
-                </div>
+                </button>
               );
             })}
           </div>
+
+          {/* Expanded day detail */}
+          {selectedCalDate && (() => {
+            const dayLogs = logs.filter(l => l.date === selectedCalDate).sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''));
+            const dateLabel = new Date(selectedCalDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+            return (
+              <div className="mt-3 pt-3 border-t border-neutral-200 dark:border-neutral-700 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-neutral-600 dark:text-neutral-300">{dateLabel}</span>
+                  <button onClick={() => setSelectedCalDate(null)} className="text-[10px] text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200">✕ close</button>
+                </div>
+                {dayLogs.length === 0 ? (
+                  <p className="text-xs text-neutral-400">No sessions — clean day 🎉</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {dayLogs.map(l => {
+                      const strain = l.strainId ? strainMap.get(l.strainId) : null;
+                      const timeLabel = l.time ? new Date(`2000-01-01T${l.time}`).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : null;
+                      return (
+                        <div key={l.id} className={cn(
+                          'flex items-center gap-3 px-3 py-2 rounded-xl text-sm',
+                          l.type === 'hookah'
+                            ? 'bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800'
+                            : 'bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800',
+                        )}>
+                          <span className="text-base">{l.type === 'hookah' ? '💨' : '🌿'}</span>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-xs">
+                                {l.type === 'hookah' ? 'Hookah' : 'Bong'}
+                              </span>
+                              {timeLabel && (
+                                <span className="text-[11px] text-neutral-500">{timeLabel}</span>
+                              )}
+                              {l.type === 'hookah' && l.duration && (
+                                <span className="text-[11px] text-neutral-400">· {l.duration}min</span>
+                              )}
+                            </div>
+                            {strain && (
+                              <span className="text-[11px] text-neutral-500">{strain.name}{strain.type ? ` · ${strain.type}` : ''}</span>
+                            )}
+                            {l.feeling && (
+                              <p className="text-[11px] text-neutral-400 mt-0.5">Feeling: {l.feeling}</p>
+                            )}
+                            {l.notes && (
+                              <p className="text-[11px] text-neutral-400 mt-0.5">{l.notes}</p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </CardContent>
       </Card>
 
