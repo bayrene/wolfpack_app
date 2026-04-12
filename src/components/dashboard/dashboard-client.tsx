@@ -1101,55 +1101,6 @@ export function DashboardClient({
                         <p className="text-xs text-neutral-500 mt-1.5">{subtitle}</p>
                       </div>
 
-                      {/* ── 3. Hypnogram bar ────────────────────────────── */}
-                      <div>
-                        {phaseSegments.length > 0 && totalPhaseMins > 0 ? (
-                          <>
-                            <div className="flex h-8 rounded-lg overflow-hidden w-full" style={{ gap: '1px' }}>
-                              {phaseSegments.map((seg, i) => (
-                                <div
-                                  key={i}
-                                  style={{
-                                    width: `${(seg.duration / totalPhaseMins) * 100}%`,
-                                    backgroundColor: STAGE_COLORS[seg.stage] ?? '#374151',
-                                    borderRadius:
-                                      i === 0 ? '8px 0 0 8px'
-                                      : i === phaseSegments.length - 1 ? '0 8px 8px 0'
-                                      : '0',
-                                  }}
-                                  title={`${seg.stage === '4' ? 'Deep' : seg.stage === '3' ? 'REM' : seg.stage === '2' ? 'Light' : seg.stage === '1' ? 'Awake' : 'Unknown'} · ${seg.duration}m`}
-                                />
-                              ))}
-                            </div>
-                            {/* Bedtime / wake time */}
-                            {(bedtime || wakeTime) && (
-                              <div className="flex justify-between mt-1">
-                                <span className="text-[10px] text-neutral-600">{bedtime ?? ''}</span>
-                                <span className="text-[10px] text-neutral-600">{wakeTime ?? ''}</span>
-                              </div>
-                            )}
-                            {/* Legend */}
-                            <div className="flex items-center gap-4 mt-2 flex-wrap">
-                              {[
-                                { stage: '1', label: 'Awake' },
-                                { stage: '3', label: 'REM' },
-                                { stage: '2', label: 'Light' },
-                                { stage: '4', label: 'Deep' },
-                              ].map(({ stage, label }) => (
-                                <div key={stage} className="flex items-center gap-1.5">
-                                  <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: STAGE_COLORS[stage] }} />
-                                  <span className="text-[11px] text-neutral-500">{label}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </>
-                        ) : (
-                          <div className="flex items-center justify-center h-8 rounded-lg bg-neutral-800/60">
-                            <span className="text-[11px] text-neutral-600">No phase data — sync Oura</span>
-                          </div>
-                        )}
-                      </div>
-
                       {/* ── 4. Contributors ─────────────────────────────── */}
                       {contributors.length > 0 && (
                         <div className="space-y-3.5">
