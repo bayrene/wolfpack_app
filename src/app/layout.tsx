@@ -17,7 +17,7 @@ const bricolage = Bricolage_Grotesque({
 });
 
 export const metadata: Metadata = {
-  title: 'Villalobos',
+  title: 'Rich Investor',
   description: 'Personal life management — health, nutrition, habits, and more',
 };
 
