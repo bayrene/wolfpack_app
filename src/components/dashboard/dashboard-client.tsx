@@ -1424,10 +1424,19 @@ export function DashboardClient({
                   {/* Per-slot extras */}
                   {extras && (extras.mouthwash || extras.floss || extras.waterFlosser || extras.probiotic) && (
                     <div className="flex flex-wrap gap-1 justify-center mt-0.5">
-                      {extras.mouthwash && <span title="Mouthwash" className="text-[9px] bg-blue-500/20 text-blue-400 rounded-full px-1.5 py-0.5 cursor-default">💧</span>}
-                      {extras.floss && <span title="Floss" className="text-[9px] bg-violet-500/20 text-violet-400 rounded-full px-1.5 py-0.5 cursor-default">🧵</span>}
-                      {extras.waterFlosser && <span title="Water Flosser" className="text-[9px] bg-sky-500/20 text-sky-400 rounded-full px-1.5 py-0.5 cursor-default">🚿</span>}
-                      {extras.probiotic && <span title="Oral Probiotic" className="text-[9px] bg-green-500/20 text-green-400 rounded-full px-1.5 py-0.5 cursor-default">🦠</span>}
+                      {[
+                        extras.mouthwash && { icon: '💧', label: 'Mouthwash', bg: 'bg-blue-500/20 text-blue-400' },
+                        extras.floss && { icon: '🧵', label: 'Floss', bg: 'bg-violet-500/20 text-violet-400' },
+                        extras.waterFlosser && { icon: '🚿', label: 'Water Flosser', bg: 'bg-sky-500/20 text-sky-400' },
+                        extras.probiotic && { icon: '🦠', label: 'Oral Probiotic', bg: 'bg-green-500/20 text-green-400' },
+                      ].filter(Boolean).map((item) => (
+                        <span key={item.label} className={`relative group/tip text-[9px] ${item.bg} rounded-full px-1.5 py-0.5 cursor-default`}>
+                          {item.icon}
+                          <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-0.5 rounded bg-neutral-800 text-white text-[10px] whitespace-nowrap opacity-0 group-hover/tip:opacity-100 transition-opacity duration-75 pointer-events-none">
+                            {item.label}
+                          </span>
+                        </span>
+                      ))}
                     </div>
                   )}
                   {anyIncomplete && <span className="text-[10px] text-amber-500 font-medium">{incompleteBrushes.length} session{incompleteBrushes.length > 1 ? 's' : ''} need routine details</span>}
