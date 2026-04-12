@@ -1436,12 +1436,6 @@ export function DashboardClient({
               );
             };
 
-            // Global extras for the strip at the bottom
-            const hasMouthwash = localDental.some(l => l.activity === 'mouthwash');
-            const hasFloss = localDental.some(l => l.activity === 'floss_pick');
-            const hasWaterFlosser = localDental.some(l => l.activity === 'water_flosser');
-            const hasAnyExtras = hasMouthwash || hasFloss || hasWaterFlosser || localDental.some(l => l.notes?.includes('bleeding'));
-
             return (
               <Card>
                 <CardHeader className="pb-2">
@@ -1450,20 +1444,11 @@ export function DashboardClient({
                     <span className="text-xs font-normal text-neutral-400 ml-auto">Auto-syncs via Apple Health</span>
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-3">
+                <CardContent>
                   <div className="grid grid-cols-2 gap-3">
                     {renderSlot('am', amBrushes)}
                     {renderSlot('pm', pmBrushes)}
                   </div>
-                  {/* Extras strip */}
-                  {hasAnyExtras && (
-                    <div className="flex flex-wrap gap-1.5 pt-1">
-                      {hasMouthwash && <span className="text-[11px] bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 rounded-full px-2 py-0.5">💧 Mouthwash</span>}
-                      {hasFloss && <span className="text-[11px] bg-violet-50 dark:bg-violet-950/40 text-violet-600 dark:text-violet-400 rounded-full px-2 py-0.5">🧵 Floss</span>}
-                      {hasWaterFlosser && <span className="text-[11px] bg-sky-50 dark:bg-sky-950/40 text-sky-600 dark:text-sky-400 rounded-full px-2 py-0.5">🚿 Water Flosser</span>}
-                      {localDental.some(l => l.notes?.includes('bleeding')) && <span className="text-[11px] bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 rounded-full px-2 py-0.5">🩸 Bleeding</span>}
-                    </div>
-                  )}
                 </CardContent>
               </Card>
             );
