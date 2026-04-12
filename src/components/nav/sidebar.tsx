@@ -25,8 +25,6 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTheme } from '@/components/theme-provider';
-import { WolfLogo } from '@/components/ui/wolf-logo';
-
 const NAV_ORDER_KEY = 'vitae-nav-order';
 
 const navItems = [
@@ -108,12 +106,10 @@ export function Sidebar() {
     >
       {/* Logo */}
       <div className="flex items-center gap-2 px-4 h-16 border-b border-neutral-200 dark:border-neutral-700">
-        <div className="w-8 h-8 rounded-lg bg-[#E07A3A] flex items-center justify-center flex-shrink-0">
-          <WolfLogo size={20} color="white" />
-        </div>
+        <span className="text-2xl flex-shrink-0">🐺</span>
         {!collapsed && (
           <span className="font-bold text-lg tracking-tight" style={{ fontFamily: '"Bricolage Grotesque", sans-serif' }}>
-            Vitae
+            Villalobos
           </span>
         )}
       </div>

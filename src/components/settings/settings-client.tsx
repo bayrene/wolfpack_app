@@ -118,7 +118,7 @@ export function SettingsClient({ settings }: { settings: Settings }) {
     <div className="space-y-6 max-w-2xl">
       <div>
         <h1 className="text-2xl font-bold" style={{ fontFamily: '"Bricolage Grotesque", sans-serif' }}>Settings</h1>
-        <p className="text-neutral-500 dark:text-neutral-400 text-sm mt-1">Customize your Vitae experience</p>
+        <p className="text-neutral-500 dark:text-neutral-400 text-sm mt-1">Customize your Villalobos experience</p>
       </div>
 
       {/* Appearance */}
