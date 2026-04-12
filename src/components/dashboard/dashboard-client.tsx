@@ -1429,7 +1429,7 @@ export function DashboardClient({
                         extras.floss && { icon: '🧵', label: 'Floss', bg: 'bg-violet-500/20 text-violet-400' },
                         extras.waterFlosser && { icon: '🚿', label: 'Water Flosser', bg: 'bg-sky-500/20 text-sky-400' },
                         extras.probiotic && { icon: '🦠', label: 'Oral Probiotic', bg: 'bg-green-500/20 text-green-400' },
-                      ].filter(Boolean).map((item) => (
+                      ].filter((x): x is { icon: string; label: string; bg: string } => !!x).map((item) => (
                         <span key={item.label} className={`relative group/tip text-[9px] ${item.bg} rounded-full px-1.5 py-0.5 cursor-default`}>
                           {item.icon}
                           <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-0.5 rounded bg-neutral-800 text-white text-[10px] whitespace-nowrap opacity-0 group-hover/tip:opacity-100 transition-opacity duration-75 pointer-events-none">
