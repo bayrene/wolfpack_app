@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useTransition, useMemo } from 'react';
+import React, { useState, useTransition, useMemo, useCallback } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -22,6 +22,8 @@ import {
   Wind,
   DollarSign,
   Pencil,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import {
   addSmokingLog,
@@ -82,6 +84,12 @@ function getLast30Dates(today: string): string[] {
 export function SmokingClient({ logs, strains, today, embedded }: Props) {
   const [isPending, startTransition] = useTransition();
   const [tab, setTab] = useState<TabType>('log');
+
+  // Calendar month navigation
+  const [calMonth, setCalMonth] = useState(() => {
+    const d = new Date(today + 'T12:00:00');
+    return { year: d.getFullYear(), month: d.getMonth() };
+  });
 
   // Hookah log modal
   const [showHookahModal, setShowHookahModal] = useState(false);
@@ -170,6 +178,46 @@ export function SmokingClient({ logs, strains, today, embedded }: Props) {
     }
     return streak;
   }, [logs, today]);
+
+  // Calendar data — group logs by date for the selected month
+  const calendarData = useMemo(() => {
+    const { year, month } = calMonth;
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const daysInMonth = lastDay.getDate();
+    const startDow = firstDay.getDay(); // 0=Sun
+
+    // Build a map: date → { hookah, cannabis }
+    const dateMap = new Map<string, { hookah: number; cannabis: number }>();
+    for (const l of logs) {
+      const d = new Date(l.date + 'T12:00:00');
+      if (d.getFullYear() === year && d.getMonth() === month) {
+        const existing = dateMap.get(l.date) ?? { hookah: 0, cannabis: 0 };
+        if (l.type === 'hookah') existing.hookah++;
+        else existing.cannabis++;
+        dateMap.set(l.date, existing);
+      }
+    }
+
+    return { daysInMonth, startDow, dateMap };
+  }, [calMonth, logs]);
+
+  const navigateCalMonth = useCallback((dir: -1 | 1) => {
+    setCalMonth(prev => {
+      let m = prev.month + dir;
+      let y = prev.year;
+      if (m < 0) { m = 11; y--; }
+      if (m > 11) { m = 0; y++; }
+      return { year: y, month: m };
+    });
+  }, []);
+
+  const calMonthLabel = new Date(calMonth.year, calMonth.month, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+  const isCurrentMonth = (() => {
+    const d = new Date(today + 'T12:00:00');
+    return calMonth.year === d.getFullYear() && calMonth.month === d.getMonth();
+  })();
 
   // --- Handlers ---
 
@@ -445,6 +493,90 @@ export function SmokingClient({ logs, strains, today, embedded }: Props) {
                 </div>
               </div>
             ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Monthly Calendar */}
+      <Card className="mb-6 border-neutral-200 dark:border-neutral-700">
+        <CardContent className="p-4">
+          {/* Header with month nav */}
+          <div className="flex items-center justify-between mb-3">
+            <button onClick={() => navigateCalMonth(-1)} className="p-1.5 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors">
+              <ChevronLeft className="w-4 h-4 text-neutral-500" />
+            </button>
+            <h3 className="font-semibold text-sm">{calMonthLabel}</h3>
+            <button
+              onClick={() => navigateCalMonth(1)}
+              disabled={isCurrentMonth}
+              className="p-1.5 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              <ChevronRight className="w-4 h-4 text-neutral-500" />
+            </button>
+          </div>
+
+          {/* Legend */}
+          <div className="flex gap-3 text-xs text-neutral-500 mb-3 justify-center">
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-400 inline-block" /> Hookah</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-400 inline-block" /> Bong</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-neutral-100 dark:bg-neutral-800 inline-block" /> Clean</span>
+          </div>
+
+          {/* Day-of-week headers */}
+          <div className="grid grid-cols-7 gap-1 mb-1">
+            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
+              <div key={d} className="text-[10px] text-neutral-400 text-center font-medium">{d}</div>
+            ))}
+          </div>
+
+          {/* Calendar grid */}
+          <div className="grid grid-cols-7 gap-1">
+            {/* Empty cells for offset */}
+            {Array.from({ length: calendarData.startDow }).map((_, i) => (
+              <div key={`empty-${i}`} className="h-11" />
+            ))}
+            {/* Day cells */}
+            {Array.from({ length: calendarData.daysInMonth }).map((_, i) => {
+              const day = i + 1;
+              const dateStr = `${calMonth.year}-${String(calMonth.month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+              const data = calendarData.dateMap.get(dateStr);
+              const hookah = data?.hookah ?? 0;
+              const cannabis = data?.cannabis ?? 0;
+              const total = hookah + cannabis;
+              const isToday = dateStr === today;
+
+              return (
+                <div
+                  key={day}
+                  className={cn(
+                    'h-11 rounded-lg flex flex-col items-center justify-center relative transition-colors',
+                    isToday && 'ring-1 ring-[#E07A3A]',
+                    total === 0
+                      ? 'bg-neutral-50 dark:bg-neutral-800/50'
+                      : total <= 1
+                        ? 'bg-amber-100 dark:bg-amber-900/30'
+                        : 'bg-orange-100 dark:bg-orange-900/30',
+                  )}
+                >
+                  <span className={cn(
+                    'text-[11px] font-medium',
+                    isToday ? 'text-[#E07A3A]' : total > 0 ? 'text-neutral-700 dark:text-neutral-200' : 'text-neutral-400 dark:text-neutral-500',
+                  )}>
+                    {day}
+                  </span>
+                  {total > 0 && (
+                    <div className="flex items-center gap-0.5 mt-0.5">
+                      {hookah > 0 && (
+                        <span className="text-[8px] font-bold text-blue-500">{hookah}💨</span>
+                      )}
+                      {cannabis > 0 && (
+                        <span className="text-[8px] font-bold text-green-500">{cannabis}🌿</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </CardContent>
       </Card>
