@@ -1358,6 +1358,22 @@ export function DashboardClient({
               }
             };
 
+            // Collect extras for a given time slot (am/pm)
+            const getSlotExtras = (brushes: typeof brushSessions) => {
+              const brushTimes = new Set(brushes.map(b => b.time));
+              const slotExtras = localDental.filter(l =>
+                brushTimes.has(l.time) &&
+                (l.activity === 'mouthwash' || l.activity === 'floss_pick' || l.activity === 'water_flosser')
+              );
+              return {
+                mouthwash: slotExtras.some(l => l.activity === 'mouthwash'),
+                floss: slotExtras.some(l => l.activity === 'floss_pick'),
+                waterFlosser: slotExtras.some(l => l.activity === 'water_flosser'),
+                bleeding: brushes.some(b => b.notes?.includes('bleeding')),
+                probiotic: brushes.some(b => b.notes?.includes('probiotic')),
+              };
+            };
+
             const renderSlot = (slot: 'am' | 'pm', brushes: typeof brushSessions) => {
               const isAm = slot === 'am';
               const done = brushes.length > 0;
@@ -1370,6 +1386,7 @@ export function DashboardClient({
               const pendingColor = anyIncomplete
                 ? 'border-amber-400 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-950/60'
                 : doneColor;
+              const extras = done ? getSlotExtras(brushes) : null;
               return (
                 <div className={`rounded-xl p-4 flex flex-col items-center gap-1.5 border-2 transition-all hover:scale-[1.02] hover:shadow-md ${done ? pendingColor : 'border-dashed border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800/60'}`}>
                   <button onClick={() => openBrushModal(slot, anyIncomplete ? firstIncomplete : (done ? brushes[0] : undefined))} disabled={isPending} className="flex flex-col items-center gap-1.5 disabled:opacity-50 w-full">
@@ -1402,6 +1419,15 @@ export function DashboardClient({
                           </button>
                         );
                       })}
+                    </div>
+                  )}
+                  {/* Per-slot extras */}
+                  {extras && (extras.mouthwash || extras.floss || extras.waterFlosser || extras.probiotic) && (
+                    <div className="flex flex-wrap gap-1 justify-center mt-0.5">
+                      {extras.mouthwash && <span className="text-[9px] bg-blue-500/20 text-blue-400 rounded-full px-1.5 py-0.5">💧</span>}
+                      {extras.floss && <span className="text-[9px] bg-violet-500/20 text-violet-400 rounded-full px-1.5 py-0.5">🧵</span>}
+                      {extras.waterFlosser && <span className="text-[9px] bg-sky-500/20 text-sky-400 rounded-full px-1.5 py-0.5">🚿</span>}
+                      {extras.probiotic && <span className="text-[9px] bg-green-500/20 text-green-400 rounded-full px-1.5 py-0.5">🦠</span>}
                     </div>
                   )}
                   {anyIncomplete && <span className="text-[10px] text-amber-500 font-medium">{incompleteBrushes.length} session{incompleteBrushes.length > 1 ? 's' : ''} need routine details</span>}
