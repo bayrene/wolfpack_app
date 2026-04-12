@@ -1336,14 +1336,19 @@ export function DashboardClient({
               return `${h12}:${String(m).padStart(2, '0')}${ampm}`;
             };
             const openBrushModal = (slot: 'am' | 'pm', brush?: (typeof brushSessions)[0]) => {
-              if (brush && brushHasExtras(brush)) {
-                // Complete session — remove it
-                setLocalDental(prev => prev.filter(l => l.id !== brush.id));
-                startTransition(async () => { await removeDentalLog(brush.id); toast.success('Brushing removed'); });
-              } else if (brush) {
-                // Incomplete session — open modal in extras-only mode
+              if (brush) {
+                // Existing session — open modal to edit extras
                 setBrushDurSec(String(brush.duration ?? 120));
-                setBrushExtras(new Set());
+                // Pre-fill currently logged extras for this session
+                const extrasAtTime = localDental.filter(l =>
+                  l.id !== brush.id && l.time === brush.time &&
+                  (l.activity === 'mouthwash' || l.activity === 'floss_pick' || l.activity === 'water_flosser')
+                );
+                const prefill = new Set<string>();
+                for (const e of extrasAtTime) prefill.add(e.activity);
+                if (brush.notes?.includes('bleeding')) prefill.add('bleeding');
+                if (brush.notes?.includes('probiotic')) prefill.add('probiotic');
+                setBrushExtras(prefill);
                 setBrushModal({ open: true, slot, extrasOnly: true, existingId: brush.id });
               } else {
                 // No session — full log
@@ -1400,7 +1405,7 @@ export function DashboardClient({
                     </div>
                   )}
                   {anyIncomplete && <span className="text-[10px] text-amber-500 font-medium">{incompleteBrushes.length} session{incompleteBrushes.length > 1 ? 's' : ''} need routine details</span>}
-                  {done && !anyIncomplete && <span className="text-[10px] text-neutral-400">tap to remove</span>}
+                  {done && !anyIncomplete && <span className="text-[10px] text-neutral-400">tap to edit</span>}
                 </div>
               );
             };
