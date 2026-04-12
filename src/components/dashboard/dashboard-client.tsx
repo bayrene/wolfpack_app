@@ -1424,10 +1424,10 @@ export function DashboardClient({
                   {/* Per-slot extras */}
                   {extras && (extras.mouthwash || extras.floss || extras.waterFlosser || extras.probiotic) && (
                     <div className="flex flex-wrap gap-1 justify-center mt-0.5">
-                      {extras.mouthwash && <span className="text-[9px] bg-blue-500/20 text-blue-400 rounded-full px-1.5 py-0.5">💧</span>}
-                      {extras.floss && <span className="text-[9px] bg-violet-500/20 text-violet-400 rounded-full px-1.5 py-0.5">🧵</span>}
-                      {extras.waterFlosser && <span className="text-[9px] bg-sky-500/20 text-sky-400 rounded-full px-1.5 py-0.5">🚿</span>}
-                      {extras.probiotic && <span className="text-[9px] bg-green-500/20 text-green-400 rounded-full px-1.5 py-0.5">🦠</span>}
+                      {extras.mouthwash && <span title="Mouthwash" className="text-[9px] bg-blue-500/20 text-blue-400 rounded-full px-1.5 py-0.5 cursor-default">💧</span>}
+                      {extras.floss && <span title="Floss" className="text-[9px] bg-violet-500/20 text-violet-400 rounded-full px-1.5 py-0.5 cursor-default">🧵</span>}
+                      {extras.waterFlosser && <span title="Water Flosser" className="text-[9px] bg-sky-500/20 text-sky-400 rounded-full px-1.5 py-0.5 cursor-default">🚿</span>}
+                      {extras.probiotic && <span title="Oral Probiotic" className="text-[9px] bg-green-500/20 text-green-400 rounded-full px-1.5 py-0.5 cursor-default">🦠</span>}
                     </div>
                   )}
                   {anyIncomplete && <span className="text-[10px] text-amber-500 font-medium">{incompleteBrushes.length} session{incompleteBrushes.length > 1 ? 's' : ''} need routine details</span>}
